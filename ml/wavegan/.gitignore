@@ -1,0 +1,13 @@
+*.sh
+*.pyc
+*.ipynb_checkpoints
+*.wav
+*.mp3
+*.bmp
+*.jpg
+*.png
+*.tar.gz
+*.tfrecord
+train*/
+eval/
+web/ckpts

@@ -1,0 +1,8 @@
+cache
+.doit.db*
+__pycache__
+output
+*.pyc
+*.ipynb_checkpoints
+*.wav
+*.tar.gz
