@@ -60,7 +60,9 @@ if __name__  == '__main__':
     slice_len_samps = int(args.slice_len * args.fs)
 
   audio_fp = tf.placeholder(tf.string, [])
+  cond_fp = tf.placeholder(tf.string, [])
   audio_bin = tf.read_file(audio_fp)
+  cond_text = tf.read_file(cond_fp)
   samps = contrib_audio.decode_wav(audio_bin, 1).audio[:, 0]
 
   if slice_len_samps is not None:
@@ -112,6 +114,7 @@ if __name__  == '__main__':
 
       try:
         _slices = sess.run(slices, {audio_fp: _audio_fp})
+        _cond_text = sess.run(cond_text, {cond_fp: '{}_cond.txt'.format(_audio_fp)})
       except:
         continue
 
@@ -123,7 +126,8 @@ if __name__  == '__main__':
           'id': tf.train.Feature(bytes_list=tf.train.BytesList(value=[audio_id.encode()])),
           'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[audio_label.encode()])),
           'slice': tf.train.Feature(int64_list=tf.train.Int64List(value=[j])),
-          'samples': tf.train.Feature(float_list=tf.train.FloatList(value=_slice))
+          'samples': tf.train.Feature(float_list=tf.train.FloatList(value=_slice)),
+          'conditional_text': tf.train.Feature(bytes_list=tf.train.BytesList(value=[_cond_text]))
         }))
 
         writer.write(example.SerializeToString())

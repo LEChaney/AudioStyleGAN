@@ -10,6 +10,7 @@ __version__ = "0.8.1"
 
 from soundfile import SoundFile, _snd, _ffi
 from bwfutils import samples_to_time, format_audio_duration
+import sys, traceback
 
 """The Cffi cdef instructions required for the broadcast wave bext chunk info struct and the chunk info struct."""
 
@@ -110,7 +111,12 @@ class BwfSoundFile(SoundFile):
 
     def ffi_string(self, value):
         """Format cffi strings."""
-        return _ffi.string(value).decode()
+        try:
+            return _ffi.string(value).decode()
+        except Exception as e:
+            #print("Warning: BwfSoundLib failed to decode some metadata", file=sys.stderr)
+            #print(e, file=sys.stderr)
+            return ''
 
 
     def get_core_info(self):
