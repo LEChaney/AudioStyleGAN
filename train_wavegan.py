@@ -163,11 +163,11 @@ def train(fps, args):
   elif args.wavegan_loss == 'wgan-gp':
     G_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.5,
+        beta1=0.0,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.5,
+        beta1=0.0,
         beta2=0.9)
   else:
     raise NotImplementedError()
@@ -178,6 +178,12 @@ def train(fps, args):
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
 
   # Run training
+  D_acc_fake = tf.reduce_mean(1 - tf.sigmoid(D_G_z))
+  D_acc_real = tf.reduce_mean(tf.sigmoid(D_x))
+  D_acc = (D_acc_fake + D_acc_real) / 2
+  tf.summary.scalar('D_acc_fake', D_acc_fake)
+  tf.summary.scalar('D_acc_real', D_acc_real)
+  tf.summary.scalar('D_acc', D_acc)
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=args.train_dir,
       save_checkpoint_secs=args.train_save_secs,
