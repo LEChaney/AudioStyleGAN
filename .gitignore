@@ -6,3 +6,11 @@ output
 *.ipynb_checkpoints
 *.wav
 *.tar.gz
+*.csv
+*.pdf
+*.xlsx
+.vscode/
+__MACOSX/
+.DS_Store
+*.vcf
+*.url
