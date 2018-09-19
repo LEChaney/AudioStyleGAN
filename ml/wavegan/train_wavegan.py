@@ -5,6 +5,7 @@ import time
 
 import numpy as np
 import tensorflow as tf
+import tensorflow_hub as hub
 from six.moves import xrange
 
 import loader
@@ -25,14 +26,20 @@ _D_Z = 100
 """
 def train(fps, args):
   with tf.name_scope('loader'):
-    x = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window)
+    x, real_cond_text = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True)
+    fake_cond_text = loader.get_batch(fps, args.train_batch_size, wavs=False, conditionals=True)
 
   # Make z vector
   z = tf.random_uniform([args.train_batch_size, _D_Z], -1., 1., dtype=tf.float32)
 
+  # Add conditional input to the model
+  embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=True)
+  real_conditionals = embed(real_cond_text)
+  fake_conditionals = embed(fake_cond_text)
+
   # Make generator
   with tf.variable_scope('G'):
-    G_z = WaveGANGenerator(z, train=True, **args.wavegan_g_kwargs)
+    G_z = WaveGANGenerator(z, train=True, conditional_input=fake_conditionals, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
@@ -61,7 +68,7 @@ def train(fps, args):
 
   # Make real discriminator
   with tf.name_scope('D_x'), tf.variable_scope('D'):
-    D_x = WaveGANDiscriminator(x, **args.wavegan_d_kwargs)
+    D_x = WaveGANDiscriminator(x, conditional_input=real_conditionals, **args.wavegan_d_kwargs)
   D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='D')
 
   # Print D summary
@@ -78,7 +85,7 @@ def train(fps, args):
 
   # Make fake discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
-    D_G_z = WaveGANDiscriminator(G_z, **args.wavegan_d_kwargs)
+    D_G_z = WaveGANDiscriminator(G_z, conditional_input=fake_conditionals, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
