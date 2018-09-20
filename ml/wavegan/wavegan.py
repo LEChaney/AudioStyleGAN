@@ -242,7 +242,8 @@ def WaveGANDiscriminator(
     # [16384 + embedding_dim] -> [1024]
     with tf.variable_scope('FC'):
       output = tf.layers.dense(output, 1024)
-      output = tf.nn.relu(output)
+    output = tf.nn.relu(output)
+    output = tf.layers.dropout(output)
 
   # Connect to single logit
   # [16384] -> [1]
