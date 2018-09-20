@@ -21,7 +21,8 @@ def get_batch(
     labels=False,
     buffer_size=8192,
     conditionals=False,
-    wavs=True):
+    wavs=True,
+    name=None):
   
   def _mapper(example_proto):
     features = {'samples': tf.FixedLenSequenceFeature([1], tf.float32, allow_missing=True)}
@@ -37,7 +38,7 @@ def get_batch(
     
     # Construct elmo embedding of conditional text
     if conditionals:
-      cond_text = tf.reduce_join(example['conditional_text'], 0)
+      cond_text = tf.reduce_join(example['conditional_text'], 0, name='conditional_text')
 
     if wavs:
       wav = example['samples']
@@ -55,7 +56,7 @@ def get_batch(
 
         wav = wav[start:start+window_len]
 
-      wav = tf.pad(wav, [[0, window_len - tf.shape(wav)[0]], [0, 0]])
+      wav = tf.pad(wav, [[0, window_len - tf.shape(wav)[0]], [0, 0]], name='audio_sample')
 
       wav.set_shape([window_len, 1])
 
@@ -84,4 +85,4 @@ def get_batch(
     dataset = dataset.repeat()
   iterator = dataset.make_one_shot_iterator()
 
-  return iterator.get_next()
+  return iterator.get_next(name=name)

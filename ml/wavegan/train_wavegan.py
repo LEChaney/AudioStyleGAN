@@ -6,6 +6,8 @@ import time
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
+from tensorflow.contrib.tensorboard.plugins import projector
+from tensorflow.python.training.summary_io import SummaryWriterCache
 from six.moves import xrange
 
 import loader
@@ -26,20 +28,19 @@ _D_Z = 100
 """
 def train(fps, args):
   with tf.name_scope('loader'):
-    x, real_cond_text = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True)
-    fake_cond_text = loader.get_batch(fps, args.train_batch_size, wavs=False, conditionals=True)
-
+    x, cond_text = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
+    #fake_cond_text = loader.get_batch(fps, args.train_batch_size, wavs=False, conditionals=True, name='fake_data')
+    
   # Make z vector
   z = tf.random_uniform([args.train_batch_size, _D_Z], -1., 1., dtype=tf.float32)
 
-  # Add conditional input to the model
-  embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=True)
-  real_conditionals = embed(real_cond_text)
-  fake_conditionals = embed(fake_cond_text)
+  # Add conditioning input to the model
+  embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=False, name='embed')
+  context_embedding = embed(cond_text)
 
   # Make generator
   with tf.variable_scope('G'):
-    G_z = WaveGANGenerator(z, train=True, conditional_input=fake_conditionals, **args.wavegan_g_kwargs)
+    G_z = WaveGANGenerator(z, train=True, context_embedding=context_embedding, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
@@ -57,8 +58,9 @@ def train(fps, args):
   print('Total params: {} ({:.2f} MB)'.format(nparams, (float(nparams) * 4) / (1024 * 1024)))
 
   # Summarize
-  tf.summary.audio('x', x, _FS)
-  tf.summary.audio('G_z', G_z, _FS)
+  tf.summary.audio('x', x, _FS, max_outputs=10)
+  tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
+  tf.summary.text('Conditioning Text', cond_text)
   G_z_rms = tf.sqrt(tf.reduce_mean(tf.square(G_z[:, :, 0]), axis=1))
   x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
   tf.summary.histogram('x_rms_batch', x_rms)
@@ -68,7 +70,7 @@ def train(fps, args):
 
   # Make real discriminator
   with tf.name_scope('D_x'), tf.variable_scope('D'):
-    D_x = WaveGANDiscriminator(x, conditional_input=real_conditionals, **args.wavegan_d_kwargs)
+    D_x = WaveGANDiscriminator(x, context_embedding=context_embedding, **args.wavegan_d_kwargs)
   D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='D')
 
   # Print D summary
@@ -85,7 +87,7 @@ def train(fps, args):
 
   # Make fake discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
-    D_G_z = WaveGANDiscriminator(G_z, conditional_input=fake_conditionals, **args.wavegan_d_kwargs)
+    D_G_z = WaveGANDiscriminator(G_z, context_embedding=context_embedding, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
@@ -170,11 +172,11 @@ def train(fps, args):
   elif args.wavegan_loss == 'wgan-gp':
     G_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.0,
+        beta1=0.5,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.0,
+        beta1=0.5,
         beta2=0.9)
   else:
     raise NotImplementedError()
@@ -195,6 +197,7 @@ def train(fps, args):
       checkpoint_dir=args.train_dir,
       save_checkpoint_secs=args.train_save_secs,
       save_summaries_secs=args.train_summary_secs) as sess:
+    #summary_writer = SummaryWriterCache.get(args.train_dir)
     while True:
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
@@ -214,6 +217,7 @@ def train(fps, args):
     'samp_z_n' int32 []: Sample this many latent vectors
     'samp_z' float32 [samp_z_n, 100]: Resultant latent vectors
     'z:0' float32 [None, 100]: Input latent vectors
+    'c:0' float32 [None, 1024]: Input context embedding vector
     'flat_pad:0' int32 []: Number of padding samples to use when flattening batch to a single audio file
     'G_z:0' float32 [None, 16384, 1]: Generated outputs
     'G_z_int16:0' int16 [None, 16384, 1]: Same as above but quantizied to 16-bit PCM samples
@@ -247,9 +251,12 @@ def infer(args):
   z = tf.placeholder(tf.float32, [None, _D_Z], name='z')
   flat_pad = tf.placeholder(tf.int32, [], name='flat_pad')
 
+  # Conditioning input
+  c = tf.placeholder(tf.float32, [None, 1024], name='c')
+
   # Execute generator
   with tf.variable_scope('G'):
-    G_z = WaveGANGenerator(z, train=False, **args.wavegan_g_kwargs)
+    G_z = WaveGANGenerator(z, train=False, context_embedding=c, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
