@@ -68,7 +68,7 @@ def WaveGANGenerator(
     batchnorm = lambda x: x
 
   if (context_embedding is not None):
-    # Reduce or expand context embedding to be size [128]
+    # Reduce or expand context embedding to be size [embedding_dim]
     c = compress_embedding(context_embedding, embedding_dim)
     output = tf.concat([z, c], 1)
   else:
@@ -222,6 +222,7 @@ def WaveGANDiscriminator(
 
     # 1x1 Convolution over combined features
     # [16, 1152] -> [16, 1024]
+    output = phaseshuffle(output)
     with tf.variable_scope('1_by_1_conv'):
       output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
       output = batchnorm(output)
@@ -230,6 +231,18 @@ def WaveGANDiscriminator(
   # Flatten
   # [16, 1024] -> [16384]
   output = tf.reshape(output, [batch_size, 4 * 4 * dim * 16])
+
+  # if (context_embedding is not None):
+  #   # Concat context embeddings
+  #   # [16384] -> [16384 + embedding_dim]
+  #   c = compress_embedding(context_embedding, embedding_dim)
+  #   output = tf.concat([output, c], 1)
+
+  #   # FC
+  #   # [16384 + embedding_dim] -> [1024]
+  #   with tf.variable_scope('FC'):
+  #     output = tf.layers.dense(output, 1024)
+  #     output = tf.nn.relu(output)
 
   # Connect to single logit
   # [16384] -> [1]

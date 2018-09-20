@@ -37,10 +37,12 @@ def train(fps, args):
   # Add conditioning input to the model
   embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=False, name='embed')
   context_embedding = embed(cond_text)
+  args.wavegan_g_kwargs['context_embedding'] = context_embedding
+  args.wavegan_d_kwargs['context_embedding'] = context_embedding
 
   # Make generator
   with tf.variable_scope('G'):
-    G_z = WaveGANGenerator(z, train=True, context_embedding=context_embedding, **args.wavegan_g_kwargs)
+    G_z = WaveGANGenerator(z, train=True, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
@@ -70,7 +72,7 @@ def train(fps, args):
 
   # Make real discriminator
   with tf.name_scope('D_x'), tf.variable_scope('D'):
-    D_x = WaveGANDiscriminator(x, context_embedding=context_embedding, **args.wavegan_d_kwargs)
+    D_x = WaveGANDiscriminator(x, **args.wavegan_d_kwargs)
   D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='D')
 
   # Print D summary
@@ -87,7 +89,7 @@ def train(fps, args):
 
   # Make fake discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
-    D_G_z = WaveGANDiscriminator(G_z, context_embedding=context_embedding, **args.wavegan_d_kwargs)
+    D_G_z = WaveGANDiscriminator(G_z, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
