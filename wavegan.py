@@ -205,44 +205,44 @@ def WaveGANDiscriminator(
     output = batchnorm(output)
   output = lrelu(output)
 
-  if (context_embedding is not None):
-    # Reduce size of context embedding
-    # Context dims: [1024] -> [128]
-    c = compress_embedding(context_embedding, embedding_dim)
+  # if (context_embedding is not None):
+  #   # Reduce size of context embedding
+  #   # Context dims: [1024] -> [128]
+  #   c = compress_embedding(context_embedding, embedding_dim)
 
-    # Replicate context 
-    # Context dims: [128] -> [1, 128]
-    c = tf.expand_dims(c, 1)
-    # Context dims: [1, 128] -> [16, 128]
-    c = tf.tile(c, [1, 16, 1])
+  #   # Replicate context 
+  #   # Context dims: [128] -> [1, 128]
+  #   c = tf.expand_dims(c, 1)
+  #   # Context dims: [1, 128] -> [16, 128]
+  #   c = tf.tile(c, [1, 16, 1])
 
-    # Concat context with encoded audio along the channels dimension
-    # [16, 1024] -> [16, 1152]
-    output = tf.concat([output, c], 2)
+  #   # Concat context with encoded audio along the channels dimension
+  #   # [16, 1024] -> [16, 1152]
+  #   output = tf.concat([output, c], 2)
 
-    # 1x1 Convolution over combined features
-    # [16, 1152] -> [16, 1024]
-    output = phaseshuffle(output)
-    with tf.variable_scope('1_by_1_conv'):
-      output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
-      output = batchnorm(output)
-    output = lrelu(output)
+  #   # 1x1 Convolution over combined features
+  #   # [16, 1152] -> [16, 1024]
+  #   output = phaseshuffle(output)
+  #   with tf.variable_scope('1_by_1_conv'):
+  #     output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
+  #     output = batchnorm(output)
+  #   output = lrelu(output)
 
   # Flatten
   # [16, 1024] -> [16384]
   output = tf.reshape(output, [batch_size, 4 * 4 * dim * 16])
 
-  # if (context_embedding is not None):
-  #   # Concat context embeddings
-  #   # [16384] -> [16384 + embedding_dim]
-  #   c = compress_embedding(context_embedding, embedding_dim)
-  #   output = tf.concat([output, c], 1)
+  if (context_embedding is not None):
+    # Concat context embeddings
+    # [16384] -> [16384 + embedding_dim]
+    c = compress_embedding(context_embedding, embedding_dim)
+    output = tf.concat([output, c], 1)
 
-  #   # FC
-  #   # [16384 + embedding_dim] -> [1024]
-  #   with tf.variable_scope('FC'):
-  #     output = tf.layers.dense(output, 1024)
-  #     output = tf.nn.relu(output)
+    # FC
+    # [16384 + embedding_dim] -> [1024]
+    with tf.variable_scope('FC'):
+      output = tf.layers.dense(output, 1024)
+      output = tf.nn.relu(output)
 
   # Connect to single logit
   # [16384] -> [1]
