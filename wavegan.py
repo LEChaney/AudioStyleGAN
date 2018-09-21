@@ -1,13 +1,13 @@
 import tensorflow as tf
 
 
-def conv1d_transpose(
+def custom_conv1d(
     inputs,
     filters,
     kernel_width,
     stride=4,
     padding='same',
-    upsample='zeros'):
+    upsample=None):
   if upsample == 'zeros':
     return tf.layers.conv2d_transpose(
         tf.expand_dims(inputs, axis=1),
@@ -33,7 +33,33 @@ def conv1d_transpose(
         1,
         padding='same')
   else:
-    raise NotImplementedError
+    return tf.layers.conv1d(
+        inputs, 
+        filters, 
+        kernel_width, 
+        strides=stride, 
+        padding='same')
+
+def residual_block(    
+    inputs,
+    filters,
+    kernel_width=3,
+    stride=1,
+    padding='same',
+    upsample=None):
+  # Shortcut connection
+  shortcut = custom_conv1d(inputs, filters, 1, stride, padding, upsample)
+
+  # Up-Conv + Gated Activation
+  tanh = tf.tanh(custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample))
+  gate = tf.sigmoid(custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample))
+  z = gate * tanh
+
+  # 1 x 1 Conv
+  output = tf.layers.conv1d(z, filters, 1, padding="SAME")
+
+  return output + shortcut
+  
 
 def lrelu(inputs, alpha=0.2):
   return tf.maximum(alpha * inputs, inputs)
@@ -59,7 +85,7 @@ def WaveGANGenerator(
     upsample='zeros',
     train=False,
     context_embedding=None,
-    embedding_dim=128):
+    embedding_dim=256):
   batch_size = tf.shape(z)[0]
 
   if use_batchnorm:
@@ -85,35 +111,36 @@ def WaveGANGenerator(
   # Layer 0
   # [16, 1024] -> [64, 512]
   with tf.variable_scope('upconv_0'):
-    output = conv1d_transpose(output, dim * 8, kernel_len, 4, upsample=upsample)
+    output = residual_block(output, dim * 8, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
-  output = tf.nn.relu(output)
+  #output = tf.nn.relu(output)
+  
 
   # Layer 1
   # [64, 512] -> [256, 256]
   with tf.variable_scope('upconv_1'):
-    output = conv1d_transpose(output, dim * 4, kernel_len, 4, upsample=upsample)
+    output = residual_block(output, dim * 4, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
-  output = tf.nn.relu(output)
+  #output = tf.nn.relu(output)
 
   # Layer 2
   # [256, 256] -> [1024, 128]
   with tf.variable_scope('upconv_2'):
-    output = conv1d_transpose(output, dim * 2, kernel_len, 4, upsample=upsample)
+    output = residual_block(output, dim * 2, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
-  output = tf.nn.relu(output)
+  #output = tf.nn.relu(output)
 
   # Layer 3
   # [1024, 128] -> [4096, 64]
   with tf.variable_scope('upconv_3'):
-    output = conv1d_transpose(output, dim, kernel_len, 4, upsample=upsample)
+    output = residual_block(output, dim, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
-  output = tf.nn.relu(output)
+  #output = tf.nn.relu(output)
 
   # Layer 4
   # [4096, 64] -> [16384, 1]
   with tf.variable_scope('upconv_4'):
-    output = conv1d_transpose(output, 1, kernel_len, 4, upsample=upsample)
+    output = residual_block(output, 1, kernel_len, 4, upsample=upsample)
   output = tf.nn.tanh(output)
 
   # Automatically update batchnorm moving averages every time G is used during training
@@ -153,7 +180,7 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=128):
+    embedding_dim=256):
   batch_size = tf.shape(x)[0]
 
   if use_batchnorm:
