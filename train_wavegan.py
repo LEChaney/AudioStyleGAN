@@ -32,7 +32,7 @@ def train(fps, args):
     #fake_cond_text = loader.get_batch(fps, args.train_batch_size, wavs=False, conditionals=True, name='fake_data')
     
   # Make z vector
-  z = tf.random_uniform([args.train_batch_size, _D_Z], -1., 1., dtype=tf.float32)
+  z = tf.random_normal([args.train_batch_size, _D_Z])
 
   # Add conditioning input to the model
   embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=False, name='embed')
@@ -247,7 +247,7 @@ def infer(args):
 
   # Subgraph that generates latent vectors
   samp_z_n = tf.placeholder(tf.int32, [], name='samp_z_n')
-  samp_z = tf.random_uniform([samp_z_n, _D_Z], -1.0, 1.0, dtype=tf.float32, name='samp_z')
+  samp_z = tf.random_normal([samp_z_n, _D_Z], name='samp_z')
 
   # Input zo
   z = tf.placeholder(tf.float32, [None, _D_Z], name='z')
