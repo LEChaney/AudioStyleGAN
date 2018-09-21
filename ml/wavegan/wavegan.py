@@ -137,7 +137,7 @@ def WaveGANGenerator(
     upsample='zeros',
     train=False,
     context_embedding=None,
-    embedding_dim=128):
+    embedding_dim=256):
   batch_size = tf.shape(z)[0]
 
   if use_batchnorm:
@@ -155,100 +155,60 @@ def WaveGANGenerator(
   # FC and reshape for convolution
   # [100 + context_embedding size] -> [16, 1024]
   with tf.variable_scope('z_project'):
-    output = tf.layers.dense(output, 4 * 4 * dim * 16)
-    output = tf.reshape(output, [batch_size, 16, dim * 16])
+    output = tf.layers.dense(output, 4 * 4 * dim * 2)
+    output = tf.reshape(output, [batch_size, 16, dim * 2])
     output = batchnorm(output)
   output = tf.nn.relu(output)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_0'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
+  # Dense 0
+  # [16, 128] -> [16, 1024]
+  with tf.variable_scope('dense_0'):
+    output = dense_block(output, 7, dim * 2, batchnorm_fn=batchnorm)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_1'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
-
-  # Up Conv 0
-  # [16, 1024] -> [64, 512]
+  # Layer 0
+  # [16, 1024] -> [64, 256]
   with tf.variable_scope('upconv_0'):
-    output = residual_unit(output, dim * 8, kernel_len, 4, upsample=upsample)
-    output = batchnorm(output)
-  #output = tf.nn.relu(output)
-
-  # Inception Blocks
-  with tf.variable_scope('incept_2'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
-
-  # Inception Blocks
-  with tf.variable_scope('incept_3'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
-
-  # Up Conv 1
-  # [64, 512] -> [256, 256]
-  with tf.variable_scope('upconv_1'):
     output = residual_unit(output, dim * 4, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_4'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
+  # Dense 1
+  # [64, 256] -> [64, 512]
+  with tf.variable_scope('dense_1'):
+    output = dense_block(output, 4, dim, batchnorm_fn=batchnorm)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_5'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
-
-  # Up Conv 2
-  # [256, 256] -> [1024, 128]
-  with tf.variable_scope('upconv_2'):
-    output = residual_unit(output, dim * 2, kernel_len, 4, upsample=upsample)
+  # Layer 1
+  # [64, 512] -> [256, 64]
+  with tf.variable_scope('upconv_1'):
+    output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_6'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
+  # Dense 2
+  # [256, 64] -> [256, 256]
+  with tf.variable_scope('dense_2'):
+    output = dense_block(output, 3, dim, batchnorm_fn=batchnorm)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_7'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
+  # Layer 2
+  # [256, 256] -> [1024, 64]
+  with tf.variable_scope('upconv_2'):
+    output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
+    output = batchnorm(output)
+  #output = tf.nn.relu(output)
 
-  # Up Conv 3
+  # Dense 3
+  # [1024, 64] -> [1024, 128]
+  with tf.variable_scope('dense_3'):
+    output = dense_block(output, 1, dim, batchnorm_fn=batchnorm)
+
+  # Layer 3
   # [1024, 128] -> [4096, 64]
   with tf.variable_scope('upconv_3'):
     output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
 
-  # Inception Blocks
-  with tf.variable_scope('incept_8'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
-
-  # Inception Blocks
-  with tf.variable_scope('incept_9'):
-    output = inception_block(output)
-    batchnorm(output)
-  output = tf.nn.relu(output)
-
-  # Up Conv 4
+  # Layer 4
   # [4096, 64] -> [16384, 1]
   with tf.variable_scope('upconv_4'):
     output = residual_unit(output, 1, kernel_len, 4, upsample=upsample)
@@ -291,7 +251,7 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=128):
+    embedding_dim=256):
   batch_size = tf.shape(x)[0]
 
   if use_batchnorm:
@@ -308,40 +268,40 @@ def WaveGANDiscriminator(
   # [16384, 1] -> [4096, 64]
   output = x
   with tf.variable_scope('downconv_0'):
-    output = residual_unit(output, dim, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
-  #output = lrelu(output)
+    output = tf.layers.conv1d(output, dim, kernel_len, 4, padding='SAME')
+  output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 1
   # [4096, 64] -> [1024, 128]
   with tf.variable_scope('downconv_1'):
-    output = residual_unit(output, dim, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
+    output = tf.layers.conv1d(output, dim * 2, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
-  #output = lrelu(output)
+  output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 2
   # [1024, 128] -> [256, 256]
   with tf.variable_scope('downconv_2'):
-    output = residual_unit(output, dim * 2, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
+    output = tf.layers.conv1d(output, dim * 4, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
-  #output = lrelu(output)
+  output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 3
   # [256, 256] -> [64, 512]
   with tf.variable_scope('downconv_3'):
-    output = residual_unit(output, dim * 2, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
+    output = tf.layers.conv1d(output, dim * 8, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
-  #output = lrelu(output)
+  output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 4
   # [64, 512] -> [16, 1024]
   with tf.variable_scope('downconv_4'):
-    output = residual_unit(output, dim * 4, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
+    output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
-  #output = lrelu(output)
+  output = lrelu(output)
 
   # Flatten
   # [16, 1024] -> [16384]
@@ -354,9 +314,9 @@ def WaveGANDiscriminator(
     output = tf.concat([output, c], 1)
 
     # FC
-    # [16384 + embedding_dim] -> [512]
+    # [16384 + embedding_dim] -> [1024]
     with tf.variable_scope('FC'):
-      output = tf.layers.dense(output, dim * 4)
+      output = tf.layers.dense(output, dim * 16)
     output = tf.nn.relu(output)
     output = tf.layers.dropout(output)
 
