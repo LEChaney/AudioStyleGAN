@@ -40,29 +40,81 @@ def custom_conv1d(
         strides=stride, 
         padding='same')
 
-def residual_block(    
+def residual_unit(    
     inputs,
     filters,
-    kernel_width=3,
+    kernel_width=25,
     stride=1,
     padding='same',
-    upsample=None):
+    upsample=None,
+    activation=tf.nn.tanh,
+    is_gated=True):
   # Shortcut connection
-  shortcut = custom_conv1d(inputs, filters, 1, stride, padding, upsample)
+  if (upsample is not None) or (inputs.shape[-1] != filters) or (stride != 1):
+    shortcut = custom_conv1d(inputs, filters, 1, stride, padding, upsample)
+  else:
+    shortcut = inputs
 
   # Up-Conv + Gated Activation
-  tanh = tf.tanh(custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample))
-  gate = tf.sigmoid(custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample))
-  z = gate * tanh
-
-  # 1 x 1 Conv
-  output = tf.layers.conv1d(z, filters, 1, padding="SAME")
+  z1 = custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample)
+  output = activation(z1)
+  if is_gated:
+    z2 = custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample)
+    gate = tf.sigmoid(z2)
+    output = gate * output
 
   return output + shortcut
-  
+
+
+def dense_block(
+    inputs,
+    num_units,
+    filters_per_unit=32,
+    kernel_width=25,
+    out_dim=None,
+    activation=tf.tanh,
+    batchnorm_fn=lambda x: x):
+  """
+  input: Input tensor
+  num_units: Number of internal convolution units in the dense block
+  batchnorm_fn: A function for normalizing each layer
+  filters_per_unit: The number of filters produced by each unit, these are stacked together
+  so the final output filters will be num_units * filters_per_unit + input filters
+  out_dim: Settings this will override the output dimension using 1 by 1 convolution at end of block
+  kernel_width: The size of the kernel used by each convolutional unit
+  """
+  output = inputs
+  for i in range(num_units):
+    with tf.variable_scope("unit_{}".format(i)):
+      bn = batchnorm_fn(output)
+      unit_out = residual_unit(bn, filters_per_unit, kernel_width, activation=activation)
+      output = tf.concat([output, unit_out], 2)
+
+  # Resize out dimensions on request
+  if out_dim is not None:
+    with tf.variable_scope("1_by_1"):
+      return residual_unit(output, out_dim, 1, activation=activation)
+  else:
+    return output
+
+def inception_block(inputs):
+  filter1 = tf.layers.conv1d(inputs, 32, 1, padding="SAME")
+
+  filter2 = tf.layers.conv1d(inputs, 32, 1, padding="SAME")
+  filter2 = tf.layers.conv1d(filter2, 32, 9, padding="SAME")
+
+  filter3 = tf.layers.conv1d(inputs, 32, 1, padding="SAME")
+  filter3 = tf.layers.conv1d(filter3, 32, 25, padding="SAME")
+
+  concat = tf.concat([filter1, filter2, filter3], 2)
+  final_conv = tf.layers.conv1d(concat, inputs.shape[-1], 1, padding="SAME")
+
+  return final_conv + inputs
+
 
 def lrelu(inputs, alpha=0.2):
   return tf.maximum(alpha * inputs, inputs)
+
 
 def compress_embedding(c, out_size):
   """
@@ -85,7 +137,7 @@ def WaveGANGenerator(
     upsample='zeros',
     train=False,
     context_embedding=None,
-    embedding_dim=256):
+    embedding_dim=128):
   batch_size = tf.shape(z)[0]
 
   if use_batchnorm:
@@ -108,40 +160,99 @@ def WaveGANGenerator(
     output = batchnorm(output)
   output = tf.nn.relu(output)
 
-  # Layer 0
+  # Inception Blocks
+  with tf.variable_scope('incept_0'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Inception Blocks
+  with tf.variable_scope('incept_1'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Up Conv 0
   # [16, 1024] -> [64, 512]
   with tf.variable_scope('upconv_0'):
-    output = residual_block(output, dim * 8, kernel_len, 4, upsample=upsample)
+    output = residual_unit(output, dim * 8, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
-  
 
-  # Layer 1
+  # Inception Blocks
+  with tf.variable_scope('incept_2'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Inception Blocks
+  with tf.variable_scope('incept_3'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Up Conv 1
   # [64, 512] -> [256, 256]
   with tf.variable_scope('upconv_1'):
-    output = residual_block(output, dim * 4, kernel_len, 4, upsample=upsample)
+    output = residual_unit(output, dim * 4, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
 
-  # Layer 2
+  # Inception Blocks
+  with tf.variable_scope('incept_4'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Inception Blocks
+  with tf.variable_scope('incept_5'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Up Conv 2
   # [256, 256] -> [1024, 128]
   with tf.variable_scope('upconv_2'):
-    output = residual_block(output, dim * 2, kernel_len, 4, upsample=upsample)
+    output = residual_unit(output, dim * 2, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
 
-  # Layer 3
+  # Inception Blocks
+  with tf.variable_scope('incept_6'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Inception Blocks
+  with tf.variable_scope('incept_7'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Up Conv 3
   # [1024, 128] -> [4096, 64]
   with tf.variable_scope('upconv_3'):
-    output = residual_block(output, dim, kernel_len, 4, upsample=upsample)
+    output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
     output = batchnorm(output)
   #output = tf.nn.relu(output)
 
-  # Layer 4
+  # Inception Blocks
+  with tf.variable_scope('incept_8'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Inception Blocks
+  with tf.variable_scope('incept_9'):
+    output = inception_block(output)
+    batchnorm(output)
+  output = tf.nn.relu(output)
+
+  # Up Conv 4
   # [4096, 64] -> [16384, 1]
   with tf.variable_scope('upconv_4'):
-    output = residual_block(output, 1, kernel_len, 4, upsample=upsample)
-  output = tf.nn.tanh(output)
+    output = residual_unit(output, 1, kernel_len, 4, upsample=upsample)
+  #output = tf.nn.tanh(output)
 
   # Automatically update batchnorm moving averages every time G is used during training
   if train and use_batchnorm:
@@ -180,7 +291,7 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=256):
+    embedding_dim=128):
   batch_size = tf.shape(x)[0]
 
   if use_batchnorm:
@@ -197,67 +308,44 @@ def WaveGANDiscriminator(
   # [16384, 1] -> [4096, 64]
   output = x
   with tf.variable_scope('downconv_0'):
-    output = tf.layers.conv1d(output, dim, kernel_len, 4, padding='SAME')
-  output = lrelu(output)
+    output = residual_unit(output, dim, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
+  #output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 1
   # [4096, 64] -> [1024, 128]
   with tf.variable_scope('downconv_1'):
-    output = tf.layers.conv1d(output, dim * 2, kernel_len, 4, padding='SAME')
+    output = residual_unit(output, dim, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
     output = batchnorm(output)
-  output = lrelu(output)
+  #output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 2
   # [1024, 128] -> [256, 256]
   with tf.variable_scope('downconv_2'):
-    output = tf.layers.conv1d(output, dim * 4, kernel_len, 4, padding='SAME')
+    output = residual_unit(output, dim * 2, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
     output = batchnorm(output)
-  output = lrelu(output)
+  #output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 3
   # [256, 256] -> [64, 512]
   with tf.variable_scope('downconv_3'):
-    output = tf.layers.conv1d(output, dim * 8, kernel_len, 4, padding='SAME')
+    output = residual_unit(output, dim * 2, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
     output = batchnorm(output)
-  output = lrelu(output)
+  #output = lrelu(output)
   output = phaseshuffle(output)
 
   # Layer 4
   # [64, 512] -> [16, 1024]
   with tf.variable_scope('downconv_4'):
-    output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
+    output = residual_unit(output, dim * 4, kernel_len, 4, padding='SAME', activation=lrelu, is_gated=False)
     output = batchnorm(output)
-  output = lrelu(output)
-
-  # if (context_embedding is not None):
-  #   # Reduce size of context embedding
-  #   # Context dims: [1024] -> [128]
-  #   c = compress_embedding(context_embedding, embedding_dim)
-
-  #   # Replicate context 
-  #   # Context dims: [128] -> [1, 128]
-  #   c = tf.expand_dims(c, 1)
-  #   # Context dims: [1, 128] -> [16, 128]
-  #   c = tf.tile(c, [1, 16, 1])
-
-  #   # Concat context with encoded audio along the channels dimension
-  #   # [16, 1024] -> [16, 1152]
-  #   output = tf.concat([output, c], 2)
-
-  #   # 1x1 Convolution over combined features
-  #   # [16, 1152] -> [16, 1024]
-  #   output = phaseshuffle(output)
-  #   with tf.variable_scope('1_by_1_conv'):
-  #     output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
-  #     output = batchnorm(output)
-  #   output = lrelu(output)
+  #output = lrelu(output)
 
   # Flatten
   # [16, 1024] -> [16384]
-  output = tf.reshape(output, [batch_size, 4 * 4 * dim * 16])
+  output = tf.reshape(output, [batch_size, -1])
 
   if (context_embedding is not None):
     # Concat context embeddings
@@ -266,9 +354,9 @@ def WaveGANDiscriminator(
     output = tf.concat([output, c], 1)
 
     # FC
-    # [16384 + embedding_dim] -> [1024]
+    # [16384 + embedding_dim] -> [512]
     with tf.variable_scope('FC'):
-      output = tf.layers.dense(output, 1024)
+      output = tf.layers.dense(output, dim * 4)
     output = tf.nn.relu(output)
     output = tf.layers.dropout(output)
 
