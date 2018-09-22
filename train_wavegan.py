@@ -582,7 +582,7 @@ if __name__ == '__main__':
   parser.set_defaults(
     data_dir=None,
     data_first_window=False,
-    wavegan_kernel_len=25,
+    wavegan_kernel_len=24,
     wavegan_dim=64,
     wavegan_batchnorm=False,
     wavegan_disc_nupdates=5,
