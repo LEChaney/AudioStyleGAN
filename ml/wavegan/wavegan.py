@@ -97,6 +97,7 @@ def dense_block(
   else:
     return output
 
+
 def inception_block(inputs, filters_internal=64, kernel_width=25):
   shortcut = inputs
 
@@ -119,18 +120,65 @@ def lrelu(inputs, alpha=0.2):
   return tf.maximum(alpha * inputs, inputs)
 
 
-def compress_embedding(c, out_size):
+def compress_embedding(embedding, embed_size):
   """
   c: Embedded context to reduce, this should be a [batch_size x N] tensor
-  out_size: The size of the new embedding
-  returns: [batch_size x out_size] tensor
+  embed_size: The size of the new embedding
+  returns: [batch_size x embed_size] tensor
   """
   with tf.variable_scope('reduce_embed'):
-    return lrelu(tf.layers.dense(c, out_size))
+    return lrelu(tf.layers.dense(embedding, embed_size))
+
+
+def generate_context_dist_params(embedding, embed_size):
+  """
+  Generates the parameters for a gaussian distribution derived from a
+  supplied context embedding.
+    embedding - The input context from which to derive the sampling distribution parameters
+    embed_size - The size of the embedding vector we are using in this program
+    Returns - [batch_size, 2 * embed_size] sized tensor containing distribution parameters
+              (mean, log(sigma)) where sigma is the diagonal entries for the covariance matrix
+  """
+  with tf.variable_scope('gen_context_dist'):
+      params = lrelu(tf.layers.dense(embedding, 2 * embed_size))
+  mean = params[:, :embed_size]
+  log_sigma = params[:, embed_size:]
+  return mean, log_sigma
+
+
+def KL_loss(mu, log_sigma):
+  with tf.name_scope("KL_divergence"):
+    loss = -log_sigma + .5 * (-1 + tf.exp(2. * log_sigma) + tf.square(mu))
+    loss = tf.reduce_mean(loss)
+    return loss
+
+
+def sample_context_embeddings(embedding, embed_size, train=False):
+  """
+  Resamples the context embedding from a normal distribution derived 
+  from the supplied context embedding.
+    embedding - The input context from which to derive the sampling distribution
+    embed_size - The size of output embedding vector
+    train - A flag 
+  """
+  mean, log_sigma = generate_context_dist_params(embedding, embed_size)
+  if train:
+    epsilon = tf.truncated_normal(tf.shape(mean))
+    stddev = tf.exp(log_sigma)
+    c = mean + stddev * epsilon
+
+    kl_loss = KL_loss(mean, log_sigma)
+  else:
+    c = mean # This is just the unmodified compressed embedding.
+    kl_loss = 0
+
+  TRAIN_COEFF_KL = 2.0
+  return c, TRAIN_COEFF_KL * kl_loss
+
 
 """
   Input: [None, 100]
-  Output: [None, 16384, 1]
+  Output: [None, 16384, 1], kl_loss for regularizing context embedding sample distribution
 """
 def WaveGANGenerator(
     z,
@@ -150,7 +198,7 @@ def WaveGANGenerator(
 
   if (context_embedding is not None):
     # Reduce or expand context embedding to be size [embedding_dim]
-    c = compress_embedding(context_embedding, embedding_dim)
+    c, kl_loss = sample_context_embeddings(context_embedding, embedding_dim, train=train)
     output = tf.concat([z, c], 1)
   else:
     output = z
@@ -225,7 +273,7 @@ def WaveGANGenerator(
     with tf.control_dependencies(update_ops):
       output = tf.identity(output)
 
-  return output
+  return output, kl_loss
 
 
 def apply_phaseshuffle(x, rad, pad_type='reflect'):
