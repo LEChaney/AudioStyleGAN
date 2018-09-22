@@ -97,19 +97,22 @@ def dense_block(
   else:
     return output
 
-def inception_block(inputs):
-  filter1 = tf.layers.conv1d(inputs, 32, 1, padding="SAME")
+def inception_block(inputs, filters_internal=64, kernel_width=25):
+  shortcut = inputs
 
-  filter2 = tf.layers.conv1d(inputs, 32, 1, padding="SAME")
-  filter2 = tf.layers.conv1d(filter2, 32, 9, padding="SAME")
+  filter1 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
+  filter1 = tf.layers.conv1d(filter1, filters_internal, kernel_width // 4, padding="SAME")
 
-  filter3 = tf.layers.conv1d(inputs, 32, 1, padding="SAME")
-  filter3 = tf.layers.conv1d(filter3, 32, 25, padding="SAME")
+  filter2 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
+  filter2 = tf.layers.conv1d(filter2, filters_internal, kernel_width // 2, padding="SAME")
+
+  filter3 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
+  filter3 = tf.layers.conv1d(filter3, filters_internal, kernel_width, padding="SAME")
 
   concat = tf.concat([filter1, filter2, filter3], 2)
-  final_conv = tf.layers.conv1d(concat, inputs.shape[-1], 1, padding="SAME")
+  output = tf.layers.conv1d(concat, inputs.shape[-1], 1, padding="SAME")
 
-  return final_conv + inputs
+  return shortcut + output
 
 
 def lrelu(inputs, alpha=0.2):
@@ -264,13 +267,30 @@ def WaveGANDiscriminator(
   else:
     phaseshuffle = lambda x: x
 
+  output = x
+
+  # Inception 0
+  for i in range(2):
+    with tf.variable_scope('inception_0_{}'.format(i)):
+      output = inception_block(output, dim, kernel_len)
+      if i > 0:
+        batchnorm(output)
+    output = lrelu(output)
+    output = phaseshuffle(output)
+
   # Layer 0
   # [16384, 1] -> [4096, 64]
-  output = x
   with tf.variable_scope('downconv_0'):
     output = tf.layers.conv1d(output, dim, kernel_len, 4, padding='SAME')
   output = lrelu(output)
   output = phaseshuffle(output)
+
+  # Inception 1
+  for i in range(2):
+    with tf.variable_scope('inception_1_{}'.format(i)):
+      output = inception_block(output, dim, kernel_len)
+    output = lrelu(output)
+    output = phaseshuffle(output)
 
   # Layer 1
   # [4096, 64] -> [1024, 128]
@@ -280,6 +300,13 @@ def WaveGANDiscriminator(
   output = lrelu(output)
   output = phaseshuffle(output)
 
+  # Inception 2
+  for i in range(2):
+    with tf.variable_scope('inception_2_{}'.format(i)):
+      output = inception_block(output, dim, kernel_len)
+    output = lrelu(output)
+    output = phaseshuffle(output)
+
   # Layer 2
   # [1024, 128] -> [256, 256]
   with tf.variable_scope('downconv_2'):
@@ -287,6 +314,13 @@ def WaveGANDiscriminator(
     output = batchnorm(output)
   output = lrelu(output)
   output = phaseshuffle(output)
+
+  # Inception 3
+  for i in range(2):
+    with tf.variable_scope('inception_3_{}'.format(i)):
+      output = inception_block(output, dim, kernel_len)
+    output = lrelu(output)
+    output = phaseshuffle(output)
 
   # Layer 3
   # [256, 256] -> [64, 512]
@@ -296,12 +330,26 @@ def WaveGANDiscriminator(
   output = lrelu(output)
   output = phaseshuffle(output)
 
+  # Inception 4
+  for i in range(2):
+    with tf.variable_scope('inception_4_{}'.format(i)):
+      output = inception_block(output, dim, kernel_len)
+    output = lrelu(output)
+    output = phaseshuffle(output)
+
   # Layer 4
   # [64, 512] -> [16, 1024]
   with tf.variable_scope('downconv_4'):
     output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
   output = lrelu(output)
+
+  # Inception 5
+  for i in range(2):
+    with tf.variable_scope('inception_5_{}'.format(i)):
+      output = inception_block(output, dim, kernel_len)
+    output = lrelu(output)
+    output = phaseshuffle(output)
 
   # Flatten
   # [16, 1024] -> [16384]
