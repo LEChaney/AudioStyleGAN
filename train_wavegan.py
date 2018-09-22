@@ -42,7 +42,7 @@ def train(fps, args):
 
   # Make generator
   with tf.variable_scope('G'):
-    G_z = WaveGANGenerator(z, train=True, **args.wavegan_g_kwargs)
+    G_z, c_kl_loss = WaveGANGenerator(z, train=True, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
@@ -101,6 +101,7 @@ def train(fps, args):
       logits=D_G_z,
       labels=real
     ))
+    G_loss += c_kl_loss
 
     D_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=D_G_z,
@@ -114,11 +115,13 @@ def train(fps, args):
     D_loss /= 2.
   elif args.wavegan_loss == 'lsgan':
     G_loss = tf.reduce_mean((D_G_z - 1.) ** 2)
+    G_loss += c_kl_loss
     D_loss = tf.reduce_mean((D_x - 1.) ** 2)
     D_loss += tf.reduce_mean(D_G_z ** 2)
     D_loss /= 2.
   elif args.wavegan_loss == 'wgan':
     G_loss = -tf.reduce_mean(D_G_z)
+    G_loss += c_kl_loss
     D_loss = tf.reduce_mean(D_G_z) - tf.reduce_mean(D_x)
 
     with tf.name_scope('D_clip_weights'):
@@ -134,6 +137,7 @@ def train(fps, args):
       D_clip_weights = tf.group(*clip_ops)
   elif args.wavegan_loss == 'wgan-gp':
     G_loss = -tf.reduce_mean(D_G_z)
+    G_loss += c_kl_loss
     D_loss = tf.reduce_mean(D_G_z) - tf.reduce_mean(D_x)
 
     alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
@@ -258,7 +262,7 @@ def infer(args):
 
   # Execute generator
   with tf.variable_scope('G'):
-    G_z = WaveGANGenerator(z, train=False, context_embedding=c, **args.wavegan_g_kwargs)
+    G_z, _ = WaveGANGenerator(z, train=False, context_embedding=c, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
