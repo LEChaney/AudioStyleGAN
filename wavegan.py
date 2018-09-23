@@ -122,25 +122,29 @@ def lrelu(inputs, alpha=0.2):
 
 def compress_embedding(embedding, embed_size):
   """
+  Return compressed embedding for discriminator
   c: Embedded context to reduce, this should be a [batch_size x N] tensor
   embed_size: The size of the new embedding
   returns: [batch_size x embed_size] tensor
   """
   with tf.variable_scope('reduce_embed'):
-    return lrelu(tf.layers.dense(embedding, embed_size))
+    embedding = lrelu(tf.layers.dense(embedding, embed_size))
+    return tf.layers.dropout(embedding)
 
 
-def generate_context_dist_params(embedding, embed_size):
+def generate_context_dist_params(embedding, embed_size, train=False):
   """
   Generates the parameters for a gaussian distribution derived from a
   supplied context embedding.
     embedding - The input context from which to derive the sampling distribution parameters
     embed_size - The size of the embedding vector we are using in this program
+    train - Flag to tell the generator whether to use dropout or not
     Returns - [batch_size, 2 * embed_size] sized tensor containing distribution parameters
               (mean, log(sigma)) where sigma is the diagonal entries for the covariance matrix
   """
   with tf.variable_scope('gen_context_dist'):
       params = lrelu(tf.layers.dense(embedding, 2 * embed_size))
+      params = tf.layers.dropout(params, 0.5 if train else 0)
   mean = params[:, :embed_size]
   log_sigma = params[:, embed_size:]
   return mean, log_sigma
@@ -161,7 +165,7 @@ def sample_context_embeddings(embedding, embed_size, train=False):
     embed_size - The size of output embedding vector
     train - A flag 
   """
-  mean, log_sigma = generate_context_dist_params(embedding, embed_size)
+  mean, log_sigma = generate_context_dist_params(embedding, embed_size, train)
   if train:
     epsilon = tf.truncated_normal(tf.shape(mean))
     stddev = tf.exp(log_sigma)
@@ -188,7 +192,7 @@ def WaveGANGenerator(
     upsample='zeros',
     train=False,
     context_embedding=None,
-    embedding_dim=256):
+    embedding_dim=128):
   batch_size = tf.shape(z)[0]
 
   if use_batchnorm:
@@ -302,7 +306,7 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=256):
+    embedding_dim=128):
   batch_size = tf.shape(x)[0]
 
   if use_batchnorm:
