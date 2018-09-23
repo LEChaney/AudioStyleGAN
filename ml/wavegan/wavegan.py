@@ -70,7 +70,7 @@ def dense_block(
     inputs,
     num_units,
     filters_per_unit=32,
-    kernel_width=25,
+    kernel_width=24,
     out_dim=None,
     activation=tf.tanh,
     batchnorm_fn=lambda x: x):
@@ -98,7 +98,7 @@ def dense_block(
     return output
 
 
-def inception_block(inputs, filters_internal=64, kernel_width=25):
+def inception_block(inputs, filters_internal=64, kernel_width=24):
   shortcut = inputs
 
   filter1 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
@@ -186,7 +186,7 @@ def sample_context_embeddings(embedding, embed_size, train=False):
 """
 def WaveGANGenerator(
     z,
-    kernel_len=25,
+    kernel_len=24,
     dim=64,
     use_batchnorm=False,
     upsample='zeros',
@@ -218,7 +218,7 @@ def WaveGANGenerator(
   # Dense 0
   # [16, 128] -> [16, 1024]
   with tf.variable_scope('dense_0'):
-    output = dense_block(output, 7, dim * 2, batchnorm_fn=batchnorm)
+    output = dense_block(output, 7, dim * 2, kernel_len, batchnorm_fn=batchnorm)
 
   # Layer 0
   # [16, 1024] -> [64, 256]
@@ -230,7 +230,7 @@ def WaveGANGenerator(
   # Dense 1
   # [64, 256] -> [64, 512]
   with tf.variable_scope('dense_1'):
-    output = dense_block(output, 4, dim, batchnorm_fn=batchnorm)
+    output = dense_block(output, 4, dim, kernel_len, batchnorm_fn=batchnorm)
 
   # Layer 1
   # [64, 512] -> [256, 64]
@@ -242,7 +242,7 @@ def WaveGANGenerator(
   # Dense 2
   # [256, 64] -> [256, 256]
   with tf.variable_scope('dense_2'):
-    output = dense_block(output, 3, dim, batchnorm_fn=batchnorm)
+    output = dense_block(output, 3, dim, kernel_len, batchnorm_fn=batchnorm)
 
   # Layer 2
   # [256, 256] -> [1024, 64]
@@ -254,7 +254,7 @@ def WaveGANGenerator(
   # Dense 3
   # [1024, 64] -> [1024, 128]
   with tf.variable_scope('dense_3'):
-    output = dense_block(output, 1, dim, batchnorm_fn=batchnorm)
+    output = dense_block(output, 1, dim, kernel_len, batchnorm_fn=batchnorm)
 
   # Layer 3
   # [1024, 128] -> [4096, 64]
