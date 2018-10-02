@@ -35,7 +35,7 @@ def train(fps, args):
   z = tf.random_normal([args.train_batch_size, _D_Z])
 
   # Add conditioning input to the model
-  embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=False, name='embed')
+  embed = hub.Module("https://tfhub.dev/google/nnlm-en-dim128-with-normalization/1", trainable=False, name='embed')
   context_embedding = embed(cond_text)
   args.wavegan_g_kwargs['context_embedding'] = context_embedding
   args.wavegan_d_kwargs['context_embedding'] = context_embedding
