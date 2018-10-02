@@ -11,3 +11,4 @@
 train*/
 eval/
 web/ckpts
+embed_visualization/
