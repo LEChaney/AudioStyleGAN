@@ -258,7 +258,7 @@ def infer(args):
   flat_pad = tf.placeholder(tf.int32, [], name='flat_pad')
 
   # Conditioning input
-  c = tf.placeholder(tf.float32, [None, 1024], name='c')
+  c = tf.placeholder(tf.float32, [None, 128], name='c')
 
   # Execute generator
   with tf.variable_scope('G'):
