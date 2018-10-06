@@ -54,16 +54,16 @@ def get_batch(
     context_data, sequence_data = tf.parse_single_sequence_example(example_proto, context_features=context_features, sequence_features=sequence_features)
     
     if labels:
-      label = context_data['id']
+      label = tf.identity(context_data['id'], name='audio_name')
     
     # Construct elmo embedding of conditional text
     if conditionals:
-      cond_texts = tf.sparse_tensor_to_dense(context_data['conditioning_texts'], default_value='', name='conditional_text')
-      cond_text_embeds = sequence_data['cond_text_embeds']
-      probs = tf.reshape(tf.ones_like(cond_text_embeds, tf.float32)[:, 0], [-1])
-      samples = tf.multinomial(tf.log([probs]), 1) # note log-prob
-      cond_text = cond_texts[tf.cast(samples[0][0], tf.int32)]
-      cond_text_embed = cond_text_embeds[tf.cast(samples[0][0], tf.int32)]
+      cond_texts = tf.sparse_tensor_to_dense(context_data['conditioning_texts'], default_value='', name='conditional_texts')
+      cond_text_embeds = tf.identity(sequence_data['cond_text_embeds'], name='cond_text_embeds')
+      probs = tf.identity(tf.reshape(tf.ones_like(cond_text_embeds, tf.float32)[:, 0], [-1]), name='cond_text_selection_probs')
+      samples = tf.identity(tf.multinomial(tf.log([probs]), 1), name='cond_text_sample_indices') # note log-prob
+      cond_text = tf.identity(cond_texts[tf.cast(samples[0][0], tf.int32)], name='conditional_text')
+      cond_text_embed = tf.identity(cond_text_embeds[tf.cast(samples[0][0], tf.int32)], name='cond_text_embed')
 
 
     if wavs:
@@ -82,13 +82,13 @@ def get_batch(
 
         wav = wav[start:start+window_len]
 
-      wav = tf.pad(wav, [[0, window_len - tf.shape(wav)[0]]], name='audio_sample')
+      wav = tf.pad(wav, [[0, window_len - tf.shape(wav)[0]]])
 
       # Runtime Data Augmentation
       wav = tf.py_func(pitch_speed_aug, [wav], tf.float32)
       wav *= tf.random_uniform([1], minval=0.5, maxval=1.1) # Change dynamic range
 
-      wav = tf.reshape(wav, [-1, 1])
+      wav = tf.reshape(wav, [-1, 1], name='real_audio')
       wav.set_shape([window_len, 1])
 
     if wavs and labels and conditionals:

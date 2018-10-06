@@ -60,7 +60,7 @@ def train(fps, args):
   # Summarize
   tf.summary.audio('x', x, _FS, max_outputs=10)
   tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
-  tf.summary.text('Conditioning Text', cond_text)
+  tf.summary.text('Conditioning Text', cond_text[:10])
   G_z_rms = tf.sqrt(tf.reduce_mean(tf.square(G_z[:, :, 0]), axis=1))
   x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
   tf.summary.histogram('x_rms_batch', x_rms)

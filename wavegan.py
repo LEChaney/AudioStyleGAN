@@ -129,7 +129,7 @@ def compress_embedding(embedding, embed_size):
   """
   with tf.variable_scope('reduce_embed'):
     embedding = lrelu(tf.layers.dense(embedding, embed_size))
-    embedding = tf.layers.dropout(embedding)
+    # embedding = tf.layers.dropout(embedding)
     return embedding
 
 
@@ -145,7 +145,7 @@ def generate_context_dist_params(embedding, embed_size, train=False):
   """
   with tf.variable_scope('gen_context_dist'):
       params = lrelu(tf.layers.dense(embedding, 2 * embed_size))
-      params = tf.layers.dropout(params, 0.5 if train else 0)
+      # params = tf.layers.dropout(params, 0.5 if train else 0)
   mean = params[:, :embed_size]
   log_sigma = params[:, embed_size:]
   return mean, log_sigma
