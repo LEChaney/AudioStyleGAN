@@ -28,17 +28,15 @@ _D_Z = 100
 """
 def train(fps, args):
   with tf.name_scope('loader'):
-    x, cond_text = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
+    x, cond_text, cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
     #fake_cond_text = loader.get_batch(fps, args.train_batch_size, wavs=False, conditionals=True, name='fake_data')
     
   # Make z vector
   z = tf.random_normal([args.train_batch_size, _D_Z])
 
   # Add conditioning input to the model
-  embed = hub.Module("https://tfhub.dev/google/nnlm-en-dim128-with-normalization/1", trainable=False, name='embed')
-  context_embedding = embed(cond_text)
-  args.wavegan_g_kwargs['context_embedding'] = context_embedding
-  args.wavegan_d_kwargs['context_embedding'] = context_embedding
+  args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
+  args.wavegan_d_kwargs['context_embedding'] = cond_text_embed
 
   # Make generator
   with tf.variable_scope('G'):
@@ -258,7 +256,7 @@ def infer(args):
   flat_pad = tf.placeholder(tf.int32, [], name='flat_pad')
 
   # Conditioning input
-  c = tf.placeholder(tf.float32, [None, 128], name='c')
+  c = tf.placeholder(tf.float32, [None, 1024], name='c')
 
   # Execute generator
   with tf.variable_scope('G'):
