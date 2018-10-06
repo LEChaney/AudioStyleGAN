@@ -9,6 +9,7 @@ if __name__  == '__main__':
   import tensorflow as tf
   from tqdm import tqdm
   from tensorflow.contrib.framework.python.ops import audio_ops as contrib_audio
+  import tensorflow_hub as hub
 
   parser = argparse.ArgumentParser()
 
@@ -49,6 +50,7 @@ if __name__  == '__main__':
 
   audio_fps = glob.glob(os.path.join(args.in_dir, '*.{}'.format(args.ext)))
   random.shuffle(audio_fps)
+  cond_fps = [audio_fp + '_cond.txt' for audio_fp in audio_fps]
 
   if args.nshards > 1:
     npershard = max(int(len(audio_fps) // (args.nshards - 1)), 1)
@@ -59,10 +61,19 @@ if __name__  == '__main__':
   if args.slice_len is not None:
     slice_len_samps = int(args.slice_len * args.fs)
 
-  audio_fp = tf.placeholder(tf.string, [])
+  # Conditioning text
   cond_fp = tf.placeholder(tf.string, [])
+  cond_dataset = tf.data.TextLineDataset([cond_fp]) # Multiple conditional texts per audio file
+  cond_texts_iter = cond_dataset.make_initializable_iterator()
+  cond_text = cond_texts_iter.get_next()
+
+  # Conditional text embedding
+  embed = hub.Module("https://tfhub.dev/google/elmo/2", trainable=False, name='embed')
+  cond_texts_batch = tf.placeholder(tf.string, [None])
+  cond_text_embeds = embed(cond_texts_batch)
+
+  audio_fp = tf.placeholder(tf.string, [])
   audio_bin = tf.read_file(audio_fp)
-  cond_text = tf.read_file(cond_fp)
   samps = contrib_audio.decode_wav(audio_bin, 1).audio[:, 0]
 
   if slice_len_samps is not None:
@@ -90,6 +101,8 @@ if __name__  == '__main__':
     slices = tf.expand_dims(samps, axis=0)
 
   sess = tf.Session()
+  coord = tf.train.Coordinator()
+  threads = tf.train.start_queue_runners(sess, coord=coord)
 
   for i, start_idx in tqdm(enumerate(range(0, len(audio_fps), npershard))):
     shard_name = '{}-{}-of-{}.tfrecord'.format(args.name, str(i).zfill(len(str(args.nshards))), args.nshards)
@@ -100,7 +113,31 @@ if __name__  == '__main__':
 
     writer = tf.python_io.TFRecordWriter(shard_fp)
 
-    for _audio_fp in audio_fps[start_idx:start_idx+npershard]:
+    # Read and process conditional text
+    _cond_texts_batch = []
+    for _cond_fp in cond_fps[start_idx:start_idx+npershard]:
+      # Read conditional text
+      sess.run(cond_texts_iter.initializer, {cond_fp: _cond_fp})
+      single_sample_cond_texts = []
+      try:
+        while True:
+          single_sample_cond_texts.append(sess.run(cond_text))
+      except tf.errors.OutOfRangeError:
+        _cond_texts_batch.append(single_sample_cond_texts)
+      
+    # Embed conditional text
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.tables_initializer())
+    flat_cond_texts_batch = [item for sublist in _cond_texts_batch for item in sublist]
+    _cond_text_embeds = sess.run(cond_text_embeds, {cond_texts_batch: flat_cond_texts_batch})
+
+    embedding_start_idx = 0
+    for offset, _audio_fp in enumerate(audio_fps[start_idx:start_idx+npershard]):
+      num_embeddings = len(_cond_texts_batch[offset])
+      embedding_end_idx = embedding_start_idx + num_embeddings
+      sample_text_embeds = _cond_text_embeds[embedding_start_idx:embedding_end_idx]
+      embedding_start_idx += num_embeddings
+
       audio_name = os.path.splitext(os.path.split(_audio_fp)[1])[0]
       if args.labels:
         audio_label, audio_id = audio_name.split('_', 1)
@@ -114,7 +151,6 @@ if __name__  == '__main__':
 
       try:
         _slices = sess.run(slices, {audio_fp: _audio_fp})
-        _cond_text = sess.run(cond_text, {cond_fp: '{}_cond.txt'.format(_audio_fp)})
       except:
         continue
 
@@ -122,13 +158,22 @@ if __name__  == '__main__':
         continue
 
       for j, _slice in enumerate(_slices):
-        example = tf.train.Example(features=tf.train.Features(feature={
+        context = features=tf.train.Features(feature={
           'id': tf.train.Feature(bytes_list=tf.train.BytesList(value=[audio_id.encode()])),
           'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[audio_label.encode()])),
           'slice': tf.train.Feature(int64_list=tf.train.Int64List(value=[j])),
           'samples': tf.train.Feature(float_list=tf.train.FloatList(value=_slice)),
-          'conditional_text': tf.train.Feature(bytes_list=tf.train.BytesList(value=[_cond_text]))
-        }))
+          'conditioning_texts': tf.train.Feature(bytes_list=tf.train.BytesList(value=_cond_texts_batch[offset])),
+        })
+
+        text_embed_features = []
+        for cond_text_embed in sample_text_embeds:
+          text_embed_feature = tf.train.Feature(float_list=tf.train.FloatList(value=cond_text_embed))
+          text_embed_features.append(text_embed_feature)
+        text_embeds = tf.train.FeatureList(feature=text_embed_features)
+        feature_lists = tf.train.FeatureLists(feature_list={'cond_text_embeds': text_embeds})
+
+        example = tf.train.SequenceExample(context=context, feature_lists=feature_lists)
 
         writer.write(example.SerializeToString())
 

@@ -1,4 +1,20 @@
 import tensorflow as tf
+import numpy as np
+from multiprocessing import cpu_count
+
+"""
+  Augment wav audio data by varying the pitch.
+  Use tf.py_func to process 1D tensorflow wavforms
+"""
+def pitch_speed_aug(wav):
+  audio_sample = wav.copy()
+  length_change = np.random.uniform(low=0.9,high=1.1)
+  speed_fac = 1.0  / length_change
+  tmp = np.interp(np.arange(0,len(audio_sample),speed_fac),np.arange(0,len(audio_sample)),audio_sample)
+  minlen = min(audio_sample.shape[0], tmp.shape[0])
+  audio_sample *= 0
+  audio_sample[0:minlen] = tmp[0:minlen]
+  return audio_sample
 
 """
   Data loader
@@ -25,23 +41,33 @@ def get_batch(
     name=None):
   
   def _mapper(example_proto):
-    features = {'samples': tf.FixedLenSequenceFeature([1], tf.float32, allow_missing=True)}
+    context_features = {'samples': tf.VarLenFeature(dtype=tf.float32)}
     if labels:
-      features['label'] = tf.FixedLenSequenceFeature([], tf.string, allow_missing=True)
+      context_features['id'] = tf.FixedLenFeature([], dtype=tf.string)
     if conditionals:
-      features['conditional_text'] = tf.FixedLenSequenceFeature([], tf.string, allow_missing=True)
+      context_features['conditioning_texts'] = tf.VarLenFeature(dtype=tf.string)
 
-    example = tf.parse_single_example(example_proto, features)
+    sequence_features = {
+      'cond_text_embeds': tf.FixedLenSequenceFeature([1024], tf.float32, allow_missing=True)
+    }
+
+    context_data, sequence_data = tf.parse_single_sequence_example(example_proto, context_features=context_features, sequence_features=sequence_features)
     
     if labels:
-      label = tf.reduce_join(example['label'], 0)
+      label = context_data['id']
     
     # Construct elmo embedding of conditional text
     if conditionals:
-      cond_text = tf.reduce_join(example['conditional_text'], 0, name='conditional_text')
+      cond_texts = tf.sparse_tensor_to_dense(context_data['conditioning_texts'], default_value='', name='conditional_text')
+      cond_text_embeds = sequence_data['cond_text_embeds']
+      probs = tf.reshape(tf.ones_like(cond_text_embeds, tf.float32)[:, 0], [-1])
+      samples = tf.multinomial(tf.log([probs]), 1) # note log-prob
+      cond_text = cond_texts[tf.cast(samples[0][0], tf.int32)]
+      cond_text_embed = cond_text_embeds[tf.cast(samples[0][0], tf.int32)]
+
 
     if wavs:
-      wav = example['samples']
+      wav = tf.sparse_tensor_to_dense(context_data['samples'])
       if first_window:
         # Use first window
         wav = wav[:window_len]
@@ -56,31 +82,37 @@ def get_batch(
 
         wav = wav[start:start+window_len]
 
-      wav = tf.pad(wav, [[0, window_len - tf.shape(wav)[0]], [0, 0]], name='audio_sample')
+      wav = tf.pad(wav, [[0, window_len - tf.shape(wav)[0]]], name='audio_sample')
 
+      # Runtime Data Augmentation
+      wav = tf.py_func(pitch_speed_aug, [wav], tf.float32)
+      wav *= tf.random_uniform([1], minval=0.5, maxval=1.1) # Change dynamic range
+
+      wav = tf.reshape(wav, [-1, 1])
       wav.set_shape([window_len, 1])
 
     if wavs and labels and conditionals:
-      return wav, label, cond_text
+      return wav, label, cond_text, cond_text_embed
     elif wavs and labels:
       return wav, label
     elif wavs and conditionals:
-      return wav, cond_text
+      return wav, cond_text, cond_text_embed
     elif labels and conditionals:
-      return labels, cond_text
+      return labels, cond_text, cond_text_embed
     elif labels:
       return label
     elif conditionals:
-      return cond_text
+      return cond_text, cond_text_embed
     else:
       return wav
     
 
   dataset = tf.data.TFRecordDataset(fps)
-  dataset = dataset.map(_mapper)
+  dataset = dataset.map(_mapper, num_parallel_calls=cpu_count())
   if repeat:
     dataset = dataset.shuffle(buffer_size=buffer_size)
-  dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
+  dataset = dataset.batch(batch_size, drop_remainder=True)
+  dataset = dataset.prefetch(batch_size)
   if repeat:
     dataset = dataset.repeat()
   iterator = dataset.make_one_shot_iterator()
