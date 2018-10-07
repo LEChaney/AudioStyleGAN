@@ -276,8 +276,9 @@ def train(fps, args):
     raise NotImplementedError()
 
   tf.summary.scalar('G_loss', G_loss)
-  if (args.wavegan_loss == 'wgan' or args.wavegan_loss == 'wgan-gp'):
+  if (args.wavegan_loss == 'wgan-gp'):
     tf.summary.scalar('Gradient Penalty', LAMBDA * gradient_penalty)
+  if (args.wavegan_loss == 'wgan' or args.wavegan_loss == 'wgan-gp'):
     if args.use_extra_uncond_loss:
       tf.summary.scalar('Critic Score - Real Data', -(D_loss_real + D_loss_real_uncond + D_loss_wrong_uncond))
       tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
