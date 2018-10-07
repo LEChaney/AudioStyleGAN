@@ -273,6 +273,7 @@ def train(fps, args):
 
   tf.summary.scalar('G_loss', G_loss)
   if (args.wavegan_loss == 'wgan' or args.wavegan_loss == 'wgan-gp'):
+    tf.summary.scalar('Gradient Penalty', LAMBDA * gradient_penalty)
     if args.use_extra_uncond_loss:
       tf.summary.scalar('Critic Score - Real Data', -(D_loss_real + D_loss_real_uncond + D_loss_wrong_uncond))
       tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
@@ -286,7 +287,6 @@ def train(fps, args):
       tf.summary.scalar('Critic Score - Fake Data', D_loss_fake)
       tf.summary.scalar('Wasserstein Distance - No Regularization Term', -(D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)))
     tf.summary.scalar('Wasserstein Distance - With Regularization Term', -D_loss)
-
   else:
     if args.use_extra_uncond_loss:
       tf.summary.scalar('D_loss_real', D_loss_real + D_loss_real_uncond + D_loss_wrong_uncond)
