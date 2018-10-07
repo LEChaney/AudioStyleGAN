@@ -108,13 +108,13 @@ def get_batch(
     
 
   dataset = tf.data.TFRecordDataset(fps)
-  dataset = dataset.map(_mapper, num_parallel_calls=cpu_count())
+  dataset = dataset.map(_mapper, num_parallel_calls=cpu_count() // 2)
   if repeat:
     dataset = dataset.shuffle(buffer_size=buffer_size)
   dataset = dataset.batch(batch_size, drop_remainder=True)
-  dataset = dataset.prefetch(batch_size)
   if repeat:
     dataset = dataset.repeat()
+  dataset = dataset.prefetch(batch_size)
   iterator = dataset.make_one_shot_iterator()
 
   return iterator.get_next(name=name)

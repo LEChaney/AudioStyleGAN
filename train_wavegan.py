@@ -29,10 +29,14 @@ _D_Z = 100
 def train(fps, args):
   with tf.name_scope('loader'):
     x, cond_text, cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
-    #fake_cond_text = loader.get_batch(fps, args.train_batch_size, wavs=False, conditionals=True, name='fake_data')
+    wrong_audio = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=False, name='wrong_batch')
+   # wrong_cond_text, wrong_cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, wavs=False, conditionals=True, name='batch')
     
   # Make z vector
   z = tf.random_normal([args.train_batch_size, _D_Z])
+
+  # embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
+  # expected_embed = embed(cond_text)
 
   # Add conditioning input to the model
   args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
@@ -61,12 +65,16 @@ def train(fps, args):
   tf.summary.audio('x', x, _FS, max_outputs=10)
   tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
   tf.summary.text('Conditioning Text', cond_text[:10])
+  # tf.summary.text('Wrong Conditioning Text', wrong_cond_text[:10])
   G_z_rms = tf.sqrt(tf.reduce_mean(tf.square(G_z[:, :, 0]), axis=1))
   x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
   tf.summary.histogram('x_rms_batch', x_rms)
   tf.summary.histogram('G_z_rms_batch', G_z_rms)
   tf.summary.scalar('x_rms', tf.reduce_mean(x_rms))
   tf.summary.scalar('G_z_rms', tf.reduce_mean(G_z_rms))
+  tf.summary.scalar('Conditional Resample - KL-Loss', c_kl_loss)
+  # tf.summary.scalar('embed_error_cosine', tf.reduce_sum(tf.multiply(cond_text_embed, expected_embed)) / (tf.norm(cond_text_embed) * tf.norm(expected_embed)))
+  # tf.summary.scalar('embed_error_cosine_wrong', tf.reduce_sum(tf.multiply(wrong_cond_text_embed, expected_embed)) / (tf.norm(wrong_cond_text_embed) * tf.norm(expected_embed)))
 
   # Make real discriminator
   with tf.name_scope('D_x'), tf.variable_scope('D'):
@@ -85,9 +93,10 @@ def train(fps, args):
   print('Total params: {} ({:.2f} MB)'.format(nparams, (float(nparams) * 4) / (1024 * 1024)))
   print('-' * 80)
 
-  # Make fake discriminator
+  # Make fake / wrong discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
     D_G_z = WaveGANDiscriminator(G_z, **args.wavegan_d_kwargs)
+    D_w = WaveGANDiscriminator(wrong_audio, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
@@ -101,26 +110,36 @@ def train(fps, args):
     ))
     G_loss += c_kl_loss
 
-    D_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+    D_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=D_G_z,
       labels=fake
     ))
-    D_loss += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+    D_loss_wrong = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+      logits=D_w,
+      labels=fake
+    ))
+    D_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=D_x,
       labels=real
     ))
 
-    D_loss /= 2.
+    D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
   elif args.wavegan_loss == 'lsgan':
     G_loss = tf.reduce_mean((D_G_z - 1.) ** 2)
     G_loss += c_kl_loss
-    D_loss = tf.reduce_mean((D_x - 1.) ** 2)
-    D_loss += tf.reduce_mean(D_G_z ** 2)
-    D_loss /= 2.
+
+    D_loss_real = tf.reduce_mean((D_x - 1.) ** 2)
+    D_loss_wrong = tf.reduce_mean(D_w ** 2)
+    D_loss_fake = tf.reduce_mean(D_G_z ** 2)
+    D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
   elif args.wavegan_loss == 'wgan':
     G_loss = -tf.reduce_mean(D_G_z)
     G_loss += c_kl_loss
-    D_loss = tf.reduce_mean(D_G_z) - tf.reduce_mean(D_x)
+
+    D_loss_real = -tf.reduce_mean(D_x)
+    D_loss_wrong = tf.reduce_mean(D_w)
+    D_loss_fake = tf.reduce_mean(D_G_z) 
+    D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
     with tf.name_scope('D_clip_weights'):
       clip_ops = []
@@ -136,7 +155,11 @@ def train(fps, args):
   elif args.wavegan_loss == 'wgan-gp':
     G_loss = -tf.reduce_mean(D_G_z)
     G_loss += c_kl_loss
-    D_loss = tf.reduce_mean(D_G_z) - tf.reduce_mean(D_x)
+
+    D_loss_real = -tf.reduce_mean(D_x)
+    D_loss_wrong = tf.reduce_mean(D_w)
+    D_loss_fake = tf.reduce_mean(D_G_z) 
+    D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
     alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
     differences = G_z - x
@@ -153,7 +176,18 @@ def train(fps, args):
     raise NotImplementedError()
 
   tf.summary.scalar('G_loss', G_loss)
-  tf.summary.scalar('D_loss', D_loss)
+  if (args.wavegan_loss == 'wgan' or args.wavegan_loss == 'wgan-gp'):
+    tf.summary.scalar('Critic Score - Real Data', -D_loss_real)
+    tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
+    tf.summary.scalar('Critic Score - Fake Data', D_loss_fake)
+    tf.summary.scalar('Wasserstein Distance - No Regularization Term', -(D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)))
+    tf.summary.scalar('Wasserstein Distance - With Regularization Term', -D_loss)
+  else:
+    tf.summary.scalar('D_loss_real', D_loss_real)
+    tf.summary.scalar('D_loss_wrong', D_loss_wrong)
+    tf.summary.scalar('D_loss_fake', D_loss_fake)
+    tf.summary.scalar('D_loss_unregularized', D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake))
+    tf.summary.scalar('D_loss', D_loss)
 
   # Create (recommended) optimizer
   if args.wavegan_loss == 'dcgan':
