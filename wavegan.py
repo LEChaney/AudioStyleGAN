@@ -43,7 +43,7 @@ def custom_conv1d(
 def residual_unit(    
     inputs,
     filters,
-    kernel_width=25,
+    kernel_width=24,
     stride=1,
     padding='same',
     upsample=None,
@@ -181,6 +181,21 @@ def sample_context_embeddings(embedding, embed_size, train=False):
   return c, TRAIN_COEFF_KL * kl_loss
 
 
+def minibatch_stddev_layer(x, group_size=4):
+  with tf.variable_scope('MinibatchStddev'):
+    group_size = tf.minimum(group_size, tf.shape(x)[0])     # Minibatch must be divisible by (or smaller than) group_size.
+    s = x.shape                                             # [NWC]  Input shape.
+    y = tf.reshape(x, [group_size, -1, s[1], s[2]])         # [GMWC] Split minibatch into G groups of size M.
+    y = tf.cast(y, tf.float32)                              # [GMWC] Cast to FP32.
+    y -= tf.reduce_mean(y, axis=0, keepdims=True)           # [GMWC] Subtract mean over group.
+    y = tf.reduce_mean(tf.square(y), axis=0)                # [MWC]  Calc variance over group.
+    y = tf.sqrt(y + 1e-8)                                   # [MWC]  Calc stddev over group.
+    y = tf.reduce_mean(y, axis=[1,2], keepdims=True)        # [M11]  Take average over fmaps and samples.
+    y = tf.cast(y, x.dtype)                                 # [M11]  Cast back to original data type.
+    y = tf.tile(y, [group_size, s[1], 1])                   # [NW1]  Replicate over group and samples.
+    return tf.concat([x, y], axis=2)                        # [NWC]  Append as new fmap.
+
+
 """
   Input: [None, 100]
   Output: [None, 16384, 1], kl_loss for regularizing context embedding sample distribution
@@ -193,7 +208,7 @@ def WaveGANGenerator(
     upsample='zeros',
     train=False,
     context_embedding=None,
-    embedding_dim=128):
+    embedding_dim=256):
   batch_size = tf.shape(z)[0]
 
   if use_batchnorm:
@@ -307,7 +322,7 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=128,
+    embedding_dim=256,
     use_extra_uncond_output=False):
   batch_size = tf.shape(x)[0]
 
@@ -358,6 +373,13 @@ def WaveGANDiscriminator(
   with tf.variable_scope('downconv_4'):
     output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
+  output = lrelu(output)
+
+  # Add explicit statistics
+  output = minibatch_stddev_layer(output)
+  with tf.variable_scope('stats_blend'):
+    output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
+    output = batchnorm(output)
   hidden = lrelu(output)
 
   if (context_embedding is not None):
@@ -375,9 +397,9 @@ def WaveGANDiscriminator(
     # [16, 1024] -> [16, 1152]
     output = tf.concat([hidden, c], 2)
 
-    # 1x1 Convolution over combined features
+    # Convolution over combined features
     # [16, 1152] -> [16, 1024]
-    with tf.variable_scope('1_by_1_conv'):
+    with tf.variable_scope('condition_mix'):
       output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
       output = batchnorm(output)
     output = lrelu(output)
