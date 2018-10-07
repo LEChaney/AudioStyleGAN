@@ -302,7 +302,7 @@ def apply_phaseshuffle(x, rad, pad_type='reflect'):
 """
 def WaveGANDiscriminator(
     x,
-    kernel_len=25,
+    kernel_len=24,
     dim=64,
     use_batchnorm=False,
     phaseshuffle_rad=0,
