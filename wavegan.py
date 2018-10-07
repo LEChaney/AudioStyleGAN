@@ -273,8 +273,8 @@ def WaveGANGenerator(
   # Automatically update batchnorm moving averages every time G is used during training
   if train and use_batchnorm:
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    if len(update_ops) != 10:
-      raise Exception('Other update ops found in graph')
+    # if len(update_ops) != 10:
+    #   raise Exception('Other update ops found in graph')
     with tf.control_dependencies(update_ops):
       output = tf.identity(output)
 
@@ -358,30 +358,55 @@ def WaveGANDiscriminator(
   with tf.variable_scope('downconv_4'):
     output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
     output = batchnorm(output)
-  output = lrelu(output)
+  hidden = lrelu(output)
+
+  if (context_embedding is not None):
+    # Reduce size of context embedding
+    # Context dims: [1024] -> [128]
+    c = compress_embedding(context_embedding, embedding_dim)
+
+    # Replicate context 
+    # Context dims: [128] -> [1, 128]
+    c = tf.expand_dims(c, 1)
+    # Context dims: [1, 128] -> [16, 128]
+    c = tf.tile(c, [1, 16, 1])
+
+    # Concat context with encoded audio along the channels dimension
+    # [16, 1024] -> [16, 1152]
+    output = tf.concat([hidden, c], 2)
+
+    # 1x1 Convolution over combined features
+    # [16, 1152] -> [16, 1024]
+    with tf.variable_scope('1_by_1_conv'):
+      output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
+      output = batchnorm(output)
+    output = lrelu(output)
+  else:
+    output = hidden
 
   # Flatten
   # [16, 1024] -> [16384]
-  hidden = tf.reshape(output, [batch_size, -1])
+  output = tf.reshape(output, [batch_size, -1])
 
-  if (context_embedding is not None):
-    # Concat context embeddings
-    # [16384] -> [16384 + embedding_dim]
-    c = compress_embedding(context_embedding, embedding_dim)
-    output = tf.concat([hidden, c], 1)
+  # if (context_embedding is not None):
+  #   # Concat context embeddings
+  #   # [16384] -> [16384 + embedding_dim]
+  #   c = compress_embedding(context_embedding, embedding_dim)
+  #   output = tf.concat([hidden, c], 1)
 
-    # FC
-    # [16384 + embedding_dim] -> [1024]
-    with tf.variable_scope('FC'):
-      output = tf.layers.dense(output, dim * 16)
-    output = tf.nn.relu(output)
-    output = tf.layers.dropout(output)
-    output = tf.layers.dense(output, 1)[:, 0]
-  else:
-    output = tf.layers.dense(hidden, 1)[:, 0]
+  #   # FC
+  #   # [16384 + embedding_dim] -> [1024]
+  #   with tf.variable_scope('FC'):
+  #     output = tf.layers.dense(output, dim * 16)
+  #   output = tf.nn.relu(output)
+  #   output = tf.layers.dropout(output)
+  #   output = tf.layers.dense(output, 1)[:, 0]
+  # else:
+  #   output = tf.layers.dense(hidden, 1)[:, 0]
 
   # Connect to single logit
   # [16384] -> [1]
+  output = tf.layers.dense(hidden, 1)[:, 0]
   with tf.variable_scope('output'):
     if (use_extra_uncond_output) and (context_embedding is not None):
       uncond_output = tf.layers.dense(hidden, 1)[:, 0]
