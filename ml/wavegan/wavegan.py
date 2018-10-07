@@ -367,19 +367,24 @@ def WaveGANDiscriminator(
     # Concat context embeddings
     # [16384] -> [16384 + embedding_dim]
     c = compress_embedding(context_embedding, embedding_dim)
-    output = tf.concat([output, c], 1)
+    cond_output = tf.concat([output, c], 1)
 
     # FC
     # [16384 + embedding_dim] -> [1024]
     with tf.variable_scope('FC'):
-      output = tf.layers.dense(output, dim * 16)
-    output = tf.nn.relu(output)
-    output = tf.layers.dropout(output)
+      cond_output = tf.layers.dense(cond_output, dim * 16)
+    cond_output = tf.nn.relu(cond_output)
+    cond_output = tf.layers.dropout(cond_output)
 
   # Connect to single logit
   # [16384] -> [1]
   with tf.variable_scope('output'):
-    output = tf.layers.dense(output, 1)[:, 0]
+    uncond_output = tf.layers.dense(output, 1)[:, 0]
+    if context_embedding is not None:
+      cond_output = tf.layers.dense(cond_output, 1)[:, 0]
+      return [cond_output, uncond_output]
+    else:
+      return [uncond_output]
 
   # Don't need to aggregate batchnorm update ops like we do for the generator because we only use the discriminator for training
 
