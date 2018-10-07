@@ -51,7 +51,7 @@ def train(fps, args):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
 
     # Make history buffer
-    history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 100, args.train_batch_size)
+    history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 25, args.train_batch_size)
 
     # Select half of batch from history buffer
     clips_from_history, embeds_from_history = history_buffer.get_from_history_buffer()
