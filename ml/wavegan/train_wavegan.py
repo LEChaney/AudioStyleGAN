@@ -10,6 +10,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python.training.summary_io import SummaryWriterCache
 from six.moves import xrange
 
+from history_buffer import HistoryBuffer
 import loader
 from wavegan import WaveGANGenerator, WaveGANDiscriminator
 from functools import reduce
@@ -49,6 +50,15 @@ def train(fps, args):
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
   G_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='G')
+
+  # Make history buffer
+  history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 100, args.train_batch_size)
+  half_batch_from_history = history_buffer.get_from_history_buffer()
+  new_fake_batch = tf.concat([half_batch_from_history, G_z[tf.shape(half_batch_from_history)[0]:]], 0)
+  with tf.control_dependencies([new_fake_batch]):
+    with tf.control_dependencies([history_buffer.add_to_history_buffer(G_z)]):
+      G_z = new_fake_batch
+  G_z.set_shape([args.train_batch_size, _WINDOW_LEN, 1])
 
   # Print G summary
   print('-' * 80)
@@ -113,7 +123,7 @@ def train(fps, args):
     G_loss += c_kl_loss
 
     # Unconditional G Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       G_loss += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
         logits=D_G_z[1],
         labels=real
@@ -134,7 +144,7 @@ def train(fps, args):
     ))
 
     # Unconditional D Losses
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       D_loss_fake_uncond = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
         logits=D_G_z[1],
         labels=fake
@@ -158,7 +168,7 @@ def train(fps, args):
     G_loss += c_kl_loss
 
     # Unconditional G Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       G_loss += tf.reduce_mean((D_G_z[1] - 1.) ** 2)
 
     # Conditional D Loss
@@ -167,7 +177,7 @@ def train(fps, args):
     D_loss_fake = tf.reduce_mean(D_G_z[0] ** 2)
 
     # Unconditional D Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       D_loss_real_uncond = tf.reduce_mean((D_x[1] - 1.) ** 2)
       D_loss_wrong_uncond = tf.reduce_mean((D_w[1] - 1.) ** 2)
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1] ** 2)
@@ -182,7 +192,7 @@ def train(fps, args):
     G_loss += c_kl_loss
 
     # Unconditional G Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       G_loss += -tf.reduce_mean(D_G_z[1])
 
     # Conditional D Loss
@@ -191,7 +201,7 @@ def train(fps, args):
     D_loss_fake = tf.reduce_mean(D_G_z[0]) 
 
     # Unconditional D Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       D_loss_real_uncond = -tf.reduce_mean(D_x[1])
       D_loss_wrong_uncond = -tf.reduce_mean(D_w[1])
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1])
@@ -218,7 +228,7 @@ def train(fps, args):
     G_loss += c_kl_loss
 
     # Unconditional G Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       G_loss += -tf.reduce_mean(D_G_z[1])
 
     # Conditional D Loss
@@ -227,7 +237,7 @@ def train(fps, args):
     D_loss_fake = tf.reduce_mean(D_G_z[0]) 
 
     # Unconditional D Loss
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       D_loss_real_uncond = -tf.reduce_mean(D_x[1])
       D_loss_wrong_uncond = -tf.reduce_mean(D_w[1])
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1])
@@ -253,7 +263,7 @@ def train(fps, args):
 
   tf.summary.scalar('G_loss', G_loss)
   if (args.wavegan_loss == 'wgan' or args.wavegan_loss == 'wgan-gp'):
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       tf.summary.scalar('Critic Score - Real Data', -(D_loss_real + D_loss_real_uncond + D_loss_wrong_uncond))
       tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
       tf.summary.scalar('Critic Score - Fake Data', D_loss_fake + D_loss_fake_uncond)
@@ -264,10 +274,11 @@ def train(fps, args):
       tf.summary.scalar('Critic Score - Real Data', -D_loss_real)
       tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
       tf.summary.scalar('Critic Score - Fake Data', D_loss_fake)
-      tf.summary.scalar('D_loss_unregularized', D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake))
+      tf.summary.scalar('Wasserstein Distance - No Regularization Term', -(D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)))
     tf.summary.scalar('Wasserstein Distance - With Regularization Term', -D_loss)
+
   else:
-    if args.wavegan_d_kwargs['context_embedding'] is not None:
+    if args.use_extra_uncond_loss:
       tf.summary.scalar('D_loss_real', D_loss_real + D_loss_real_uncond + D_loss_wrong_uncond)
       tf.summary.scalar('D_loss_wrong', D_loss_wrong)
       tf.summary.scalar('D_loss_fake', D_loss_fake + D_loss_fake_uncond)
@@ -678,6 +689,8 @@ if __name__ == '__main__':
       help='Length of post-processing filter for DCGAN')
   wavegan_args.add_argument('--wavegan_disc_phaseshuffle', type=int,
       help='Radius of phase shuffle operation')
+  wavegan_args.add_argument('--use_extra_uncond_loss', action='store_true', dest='use_extra_uncond_loss',
+      help='If set, use post-processing filter')
 
   train_args = parser.add_argument_group('Train')
   train_args.add_argument('--train_batch_size', type=int,
@@ -713,6 +726,7 @@ if __name__ == '__main__':
     wavegan_genr_pp=False,
     wavegan_genr_pp_len=512,
     wavegan_disc_phaseshuffle=2,
+    use_extra_uncond_loss=False,
     train_batch_size=64,
     train_save_secs=300,
     train_summary_secs=120,
@@ -743,7 +757,8 @@ if __name__ == '__main__':
       'kernel_len': args.wavegan_kernel_len,
       'dim': args.wavegan_dim,
       'use_batchnorm': args.wavegan_batchnorm,
-      'phaseshuffle_rad': args.wavegan_disc_phaseshuffle
+      'phaseshuffle_rad': args.wavegan_disc_phaseshuffle,
+      'use_extra_uncond_output': args.use_extra_uncond_loss
   })
 
   # Assign appropriate split for mode

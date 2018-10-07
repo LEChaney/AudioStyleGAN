@@ -307,7 +307,8 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=128):
+    embedding_dim=128,
+    use_extra_uncond_output=False):
   batch_size = tf.shape(x)[0]
 
   if use_batchnorm:
@@ -361,30 +362,32 @@ def WaveGANDiscriminator(
 
   # Flatten
   # [16, 1024] -> [16384]
-  output = tf.reshape(output, [batch_size, -1])
+  hidden = tf.reshape(output, [batch_size, -1])
 
   if (context_embedding is not None):
     # Concat context embeddings
     # [16384] -> [16384 + embedding_dim]
     c = compress_embedding(context_embedding, embedding_dim)
-    cond_output = tf.concat([output, c], 1)
+    output = tf.concat([hidden, c], 1)
 
     # FC
     # [16384 + embedding_dim] -> [1024]
     with tf.variable_scope('FC'):
-      cond_output = tf.layers.dense(cond_output, dim * 16)
-    cond_output = tf.nn.relu(cond_output)
-    cond_output = tf.layers.dropout(cond_output)
+      output = tf.layers.dense(output, dim * 16)
+    output = tf.nn.relu(output)
+    output = tf.layers.dropout(output)
+    output = tf.layers.dense(output, 1)[:, 0]
+  else:
+    output = tf.layers.dense(hidden, 1)[:, 0]
 
   # Connect to single logit
   # [16384] -> [1]
   with tf.variable_scope('output'):
-    uncond_output = tf.layers.dense(output, 1)[:, 0]
-    if context_embedding is not None:
-      cond_output = tf.layers.dense(cond_output, 1)[:, 0]
-      return [cond_output, uncond_output]
+    if (use_extra_uncond_output) and (context_embedding is not None):
+      uncond_output = tf.layers.dense(hidden, 1)[:, 0]
+      return [output, uncond_output]
     else:
-      return [uncond_output]
+      return [output]
 
   # Don't need to aggregate batchnorm update ops like we do for the generator because we only use the discriminator for training
 
