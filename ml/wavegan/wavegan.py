@@ -428,8 +428,8 @@ def WaveGANDiscriminator(
 
   # Connect to single logit
   # [16384] -> [1]
-  output = tf.layers.dense(hidden, 1)[:, 0]
   with tf.variable_scope('output'):
+    output = tf.layers.dense(hidden, 1)[:, 0]
     if (use_extra_uncond_output) and (context_embedding is not None):
       uncond_output = tf.layers.dense(hidden, 1)[:, 0]
       return [output, uncond_output]
