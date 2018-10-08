@@ -218,7 +218,7 @@ def WaveGANGenerator(
 
   if (context_embedding is not None):
     # Reduce or expand context embedding to be size [embedding_dim]
-    c, kl_loss = sample_context_embeddings(context_embedding, embedding_dim, train=train)
+    c = compress_embedding(context_embedding, embedding_dim)
     output = tf.concat([z, c], 1)
   else:
     output = z
@@ -293,7 +293,7 @@ def WaveGANGenerator(
     with tf.control_dependencies(update_ops):
       output = tf.identity(output)
 
-  return output, kl_loss
+  return output, 0
 
 
 def apply_phaseshuffle(x, rad, pad_type='reflect'):
