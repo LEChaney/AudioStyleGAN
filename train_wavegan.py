@@ -21,7 +21,7 @@ from functools import reduce
 """
 _FS = 16000
 _WINDOW_LEN = 16384
-_D_Z = 128
+_D_Z = 100
 
 
 """
