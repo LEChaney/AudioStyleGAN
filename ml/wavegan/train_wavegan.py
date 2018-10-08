@@ -50,22 +50,22 @@ def train(fps, args):
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
 
-    # Make history buffer
-    history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 25, args.train_batch_size)
+    # # Make history buffer
+    # history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 25, args.train_batch_size)
 
-    # Select half of batch from history buffer
-    g_from_history, r_from_history, embeds_from_history = history_buffer.get_from_history_buffer()
-    new_fake_batch = tf.concat([G_z[:tf.shape(G_z)[0] - tf.shape(g_from_history)[0]], g_from_history], 0) # Use tf.shape to handle case when g_from_history is empty
-    new_cond_embeds = tf.concat([cond_text_embed[:tf.shape(cond_text_embed)[0] - tf.shape(embeds_from_history)[0]], embeds_from_history], 0)
-    new_real_batch = tf.concat([x[:tf.shape(x)[0] - tf.shape(r_from_history)[0]], r_from_history], 0)
-    with tf.control_dependencies([new_fake_batch, new_real_batch, new_cond_embeds]):
-      with tf.control_dependencies([history_buffer.add_to_history_buffer(G_z, x, cond_text_embed)]):
-        G_z = tf.identity(new_fake_batch)
-        x = tf.identity(new_real_batch)
-        args.wavegan_g_kwargs['context_embedding'] = tf.identity(new_cond_embeds)
-        args.wavegan_d_kwargs['context_embedding'] = tf.identity(new_cond_embeds)
-    G_z.set_shape([args.train_batch_size, _WINDOW_LEN, 1])
-    x.set_shape([args.train_batch_size, _WINDOW_LEN, 1])
+    # # Select half of batch from history buffer
+    # g_from_history, r_from_history, embeds_from_history = history_buffer.get_from_history_buffer()
+    # new_fake_batch = tf.concat([G_z[:tf.shape(G_z)[0] - tf.shape(g_from_history)[0]], g_from_history], 0) # Use tf.shape to handle case when g_from_history is empty
+    # new_cond_embeds = tf.concat([cond_text_embed[:tf.shape(cond_text_embed)[0] - tf.shape(embeds_from_history)[0]], embeds_from_history], 0)
+    # new_real_batch = tf.concat([x[:tf.shape(x)[0] - tf.shape(r_from_history)[0]], r_from_history], 0)
+    # with tf.control_dependencies([new_fake_batch, new_real_batch, new_cond_embeds]):
+    #   with tf.control_dependencies([history_buffer.add_to_history_buffer(G_z, x, cond_text_embed)]):
+    #     G_z = tf.identity(new_fake_batch)
+    #     x = tf.identity(new_real_batch)
+    #     args.wavegan_g_kwargs['context_embedding'] = tf.identity(new_cond_embeds)
+    #     args.wavegan_d_kwargs['context_embedding'] = tf.identity(new_cond_embeds)
+    # G_z.set_shape([args.train_batch_size, _WINDOW_LEN, 1])
+    # x.set_shape([args.train_batch_size, _WINDOW_LEN, 1])
 
   G_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='G')
 
@@ -89,12 +89,12 @@ def train(fps, args):
   x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
   tf.summary.histogram('x_rms_batch', x_rms)
   tf.summary.histogram('G_z_rms_batch', G_z_rms)
-  tf.summary.scalar('history_buffer_size', history_buffer.current_size)
-  tf.summary.scalar('g_from_history_size', tf.shape(g_from_history)[0])
-  tf.summary.scalar('r_from_history_size', tf.shape(r_from_history)[0])
-  tf.summary.scalar('embeds_from_history_size', tf.shape(embeds_from_history)[0])
-  tf.summary.audio('G_z_history', g_from_history, _FS, max_outputs=10)
-  tf.summary.audio('x_history', r_from_history, _FS, max_outputs=10)
+  # tf.summary.scalar('history_buffer_size', history_buffer.current_size)
+  # tf.summary.scalar('g_from_history_size', tf.shape(g_from_history)[0])
+  # tf.summary.scalar('r_from_history_size', tf.shape(r_from_history)[0])
+  # tf.summary.scalar('embeds_from_history_size', tf.shape(embeds_from_history)[0])
+  # tf.summary.audio('G_z_history', g_from_history, _FS, max_outputs=10)
+  # tf.summary.audio('x_history', r_from_history, _FS, max_outputs=10)
   tf.summary.audio('wrong_audio', wrong_audio, _FS, max_outputs=10)
   tf.summary.scalar('x_rms', tf.reduce_mean(x_rms))
   tf.summary.scalar('G_z_rms', tf.reduce_mean(G_z_rms))
