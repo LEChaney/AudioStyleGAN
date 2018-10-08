@@ -86,7 +86,7 @@ def dense_block(
   output = inputs
   for i in range(num_units):
     with tf.variable_scope("unit_{}".format(i)):
-      bn = batchnorm_fn(output)
+      bn = batchnorm_fn(output) if i != 0 else output
       unit_out = residual_unit(bn, filters_per_unit, kernel_width, activation=activation)
       output = tf.concat([output, unit_out], 2)
 
@@ -228,13 +228,12 @@ def WaveGANGenerator(
   with tf.variable_scope('z_project'):
     output = tf.layers.dense(output, 4 * 4 * dim * 2)
     output = tf.reshape(output, [batch_size, 16, dim * 2])
-    output = batchnorm(output)
-  output = tf.nn.relu(output)
 
   # Dense 0
   # [16, 128] -> [16, 1024]
   with tf.variable_scope('dense_0'):
     output = dense_block(output, 7, dim * 2, kernel_len, batchnorm_fn=batchnorm)
+    output = batchnorm(output)
 
   # Layer 0
   # [16, 1024] -> [64, 256]
@@ -247,6 +246,7 @@ def WaveGANGenerator(
   # [64, 256] -> [64, 512]
   with tf.variable_scope('dense_1'):
     output = dense_block(output, 4, dim, kernel_len, batchnorm_fn=batchnorm)
+    output = batchnorm(output)
 
   # Layer 1
   # [64, 512] -> [256, 64]
@@ -259,6 +259,7 @@ def WaveGANGenerator(
   # [256, 64] -> [256, 256]
   with tf.variable_scope('dense_2'):
     output = dense_block(output, 3, dim, kernel_len, batchnorm_fn=batchnorm)
+    output = batchnorm(output)
 
   # Layer 2
   # [256, 256] -> [1024, 64]
@@ -271,6 +272,7 @@ def WaveGANGenerator(
   # [1024, 64] -> [1024, 128]
   with tf.variable_scope('dense_3'):
     output = dense_block(output, 1, dim, kernel_len, batchnorm_fn=batchnorm)
+    output = batchnorm(output)
 
   # Layer 3
   # [1024, 128] -> [4096, 64]
