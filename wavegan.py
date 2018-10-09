@@ -390,11 +390,11 @@ def encode_audio_stage_2(x,
       output = lrelu(output)
 
     # Add explicit statistics
-    output = minibatch_stddev_layer(output)
-    with tf.variable_scope('stats_blend'):
-      output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
-      output = batchnorm(output)
-    output = lrelu(output)
+    # output = minibatch_stddev_layer(output)
+    # with tf.variable_scope('stats_blend'):
+    #   output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
+    #   output = batchnorm(output)
+    # output = lrelu(output)
 
       # Flatten
     # [16, 1024] -> [16384]
