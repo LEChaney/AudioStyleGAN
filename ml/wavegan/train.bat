@@ -4,6 +4,7 @@ python train_wavegan.py train .\train ^
 --data_first_window ^
 --wavegan_genr_pp ^
 --wavegan_loss dcgan ^
+--use_extra_uncond_loss ^
 --train_summary_secs 5
 
 REM --use_extra_uncond_loss ^
