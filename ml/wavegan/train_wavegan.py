@@ -198,8 +198,8 @@ def train(fps, args):
       D_loss_wrong_uncond = tf.reduce_mean((D_w[1] - 1.) ** 2)
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1] ** 2)
 
-      D_loss = D_loss_real + D_loss_wrong + D_loss_fake \
-             + D_loss_real_uncond + D_loss_wrong_uncond + D_loss_fake_uncond
+      D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
+             + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
   elif args.wavegan_loss == 'wgan':
@@ -222,9 +222,10 @@ def train(fps, args):
       D_loss_wrong_uncond = -tf.reduce_mean(D_w[1])
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1])
 
-      D_loss = D_loss_real + D_loss_wrong
+      D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
+             + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
     else:
-      D_loss = D_loss_real + D_loss_wrong
+      D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
     with tf.name_scope('D_clip_weights'):
       clip_ops = []
