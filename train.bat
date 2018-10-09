@@ -3,7 +3,6 @@ python train_wavegan.py train .\train ^
 --data_dir .\data\Final_Datasets\All ^
 --data_first_window ^
 --wavegan_genr_pp ^
---wavegan_batchnorm ^
 --wavegan_loss dcgan ^
 --wavegan_disc_phaseshuffle 0 ^
 --train_summary_secs 5
