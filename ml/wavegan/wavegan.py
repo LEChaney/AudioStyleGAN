@@ -409,8 +409,8 @@ def WaveGANDiscriminator(
   if (context_embedding is not None):
     # Concat context embeddings
     # [16384] -> [16384 + embedding_dim]
-    # c = compress_embedding(context_embedding, embedding_dim)
-    output = tf.concat([hidden, context_embedding], 1)
+    c = compress_embedding(context_embedding, embedding_dim)
+    output = tf.concat([hidden, c], 1)
 
     # FC
     # [16384 + embedding_dim] -> [1024]
