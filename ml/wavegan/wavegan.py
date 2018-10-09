@@ -86,7 +86,7 @@ def dense_block(
   output = inputs
   for i in range(num_units):
     with tf.variable_scope("unit_{}".format(i)):
-      bn = batchnorm_fn(output) if i != 0 else lambda x: x
+      bn = batchnorm_fn(output) if i != 0 else output
       unit_out = residual_unit(bn, filters_per_unit, kernel_width, activation=activation)
       output = tf.concat([output, unit_out], 2)
 
