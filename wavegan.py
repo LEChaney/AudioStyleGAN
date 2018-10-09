@@ -376,7 +376,7 @@ def encode_audio_stage_2(x,
     # Layer 3
     # [256, 256] -> [64, 512]
     with tf.variable_scope('downconv_3'):
-      output = tf.layers.conv1d(output, dim * 8, kernel_len, 4, padding='SAME')
+      output = tf.layers.conv1d(x, dim * 8, kernel_len, 4, padding='SAME')
       output = batchnorm(output)
       output = lrelu(output)
       output = phaseshuffle(output)
