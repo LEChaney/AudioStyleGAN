@@ -383,30 +383,6 @@ def WaveGANDiscriminator(
   #   output = batchnorm(output)
   # hidden = lrelu(output)
 
-  # if (context_embedding is not None):
-  #   # Reduce size of context embedding
-  #   # Context dims: [1024] -> [128]
-  #   c = compress_embedding(context_embedding, embedding_dim)
-
-  #   # Replicate context 
-  #   # Context dims: [128] -> [1, 128]
-  #   c = tf.expand_dims(c, 1)
-  #   # Context dims: [1, 128] -> [16, 128]
-  #   c = tf.tile(c, [1, 16, 1])
-
-  #   # Concat context with encoded audio along the channels dimension
-  #   # [16, 1024] -> [16, 1152]
-  #   output = tf.concat([hidden, c], 2)
-
-  #   # Convolution over combined features
-  #   # [16, 1152] -> [16, 1024]
-  #   with tf.variable_scope('condition_mix'):
-  #     output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
-  #     output = batchnorm(output)
-  #   output = lrelu(output)
-  # else:
-  #   output = hidden
-
   # Flatten
   # [16, 1024] -> [16384]
   hidden = tf.reshape(output, [batch_size, -1])
