@@ -439,7 +439,7 @@ def WaveGANDiscriminator(
         cond_out = tf.layers.dropout(cond_out)
         output = cond_out
   else:
-    output = encode_audio_stage_2(stage_1, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+    output = uncond_out
 
   # Connect to single logit
   # [16384] -> [1]
