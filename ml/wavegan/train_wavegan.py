@@ -29,15 +29,15 @@ _D_Z = 128
 """
 def train(fps, args):
   with tf.name_scope('loader'):
-    x, cond_text, cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
+    x, cond_text, _ = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
     wrong_audio = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=False, name='wrong_batch')
    # wrong_cond_text, wrong_cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, wavs=False, conditionals=True, name='batch')
     
   # Make z vector
   z = tf.random_normal([args.train_batch_size, _D_Z])
 
-  # embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
-  # cond_text_embed = embed(cond_text)
+  embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
+  cond_text_embed = embed(cond_text)
 
   # Add conditioning input to the model
   args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
