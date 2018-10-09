@@ -29,19 +29,19 @@ _D_Z = 256
 """
 def train(fps, args):
   with tf.name_scope('loader'):
-    x, cond_text, cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
+    x, cond_text, _ = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
     wrong_audio = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=False, name='wrong_batch')
    # wrong_cond_text, wrong_cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, wavs=False, conditionals=True, name='batch')
     
   # Make z vector
   z = tf.random_normal([args.train_batch_size, _D_Z])
 
-  # embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
-  # expected_embed = embed(cond_text)
+  embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
+  cond_text_embed = embed(cond_text)
 
   # Add conditioning input to the model
   args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
-  args.wavegan_d_kwargs['context_embedding'] = cond_text_embed
+  args.wavegan_d_kwargs['context_embedding'] = args.wavegan_g_kwargs['context_embedding']
 
   with tf.variable_scope('G'):
     # Make generator
@@ -128,8 +128,8 @@ def train(fps, args):
   # Create loss
   D_clip_weights = None
   if args.wavegan_loss == 'dcgan':
-    fake = tf.zeros([args.train_batch_size], dtype=tf.float32)
-    real = tf.ones([args.train_batch_size], dtype=tf.float32)
+    fake = tf.zeros([args.train_batch_size, 1], dtype=tf.float32)
+    real = tf.ones([args.train_batch_size, 1], dtype=tf.float32)
 
     # Conditional G Loss
     G_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
@@ -174,10 +174,9 @@ def train(fps, args):
         labels=real
       ))
 
-      D_loss = D_loss_real + D_loss_wrong + D_loss_fake \
-             + D_loss_real_uncond + D_loss_wrong_uncond + D_loss_fake_uncond
+      D_loss = D_loss_real + D_loss_wrong
     else:
-      D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
+      D_loss = D_loss_real + D_loss_wrong
   elif args.wavegan_loss == 'lsgan':
     # Conditional G Loss
     G_loss = tf.reduce_mean((D_G_z[0] - 1.) ** 2)
@@ -222,10 +221,9 @@ def train(fps, args):
       D_loss_wrong_uncond = -tf.reduce_mean(D_w[1])
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1])
 
-      D_loss = D_loss_real + D_loss_wrong + D_loss_fake \
-             + D_loss_real_uncond + D_loss_wrong_uncond + D_loss_fake_uncond
+      D_loss = D_loss_real + D_loss_wrong
     else:
-      D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
+      D_loss = D_loss_real + D_loss_wrong
 
     with tf.name_scope('D_clip_weights'):
       clip_ops = []
@@ -305,6 +303,10 @@ def train(fps, args):
                          D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
                        + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond)
     else:
+      tf.summary.scalar('D_acc', 0.5 * (tf.reduce_mean(tf.sigmoid(D_x[0])) + tf.reduce_mean(1 - tf.sigmoid(D_w[0]))))
+      tf.summary.scalar('D_score_real', tf.reduce_mean(tf.sigmoid(D_x[0])))
+      tf.summary.scalar('D_score_wrong', tf.reduce_mean(tf.sigmoid(D_w[0])))
+      tf.summary.scalar('D_score_fake', tf.reduce_mean(tf.sigmoid(D_G_z[0])))
       tf.summary.scalar('D_loss_real', D_loss_real)
       tf.summary.scalar('D_loss_wrong', D_loss_wrong)
       tf.summary.scalar('D_loss_fake', D_loss_fake)
@@ -344,7 +346,8 @@ def train(fps, args):
   # Create training ops
   G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
       global_step=tf.train.get_or_create_global_step())
-  D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
+  D_train_op = D_opt.minimize(D_loss, var_list=D_vars,
+      global_step=tf.train.get_or_create_global_step())
 
   # Run training
   with tf.train.MonitoredTrainingSession(
@@ -362,7 +365,7 @@ def train(fps, args):
           sess.run(D_clip_weights)
 
       # Train generator
-      sess.run(G_train_op)
+      # sess.run(G_train_op)
 
 
 """
