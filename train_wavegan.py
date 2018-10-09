@@ -49,9 +49,21 @@ def train(fps, args):
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
+    
+  # Summarize
+  G_z_rms = tf.sqrt(tf.reduce_mean(tf.square(G_z[:, :, 0]), axis=1))
+  x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
+  tf.summary.histogram('x_rms_batch', x_rms)
+  tf.summary.histogram('G_z_rms_batch', G_z_rms)
+  tf.summary.scalar('x_rms', tf.reduce_mean(x_rms))
+  tf.summary.scalar('G_z_rms', tf.reduce_mean(G_z_rms))
+  tf.summary.audio('x', x, _FS, max_outputs=10)
+  tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
+  tf.summary.text('Conditioning Text', cond_text[:10])
 
+  with tf.variable_scope('G'):
     # Make history buffer
-    history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 25, args.train_batch_size)
+    history_buffer = HistoryBuffer(_WINDOW_LEN, args.train_batch_size * 100, args.train_batch_size)
 
     # Select half of batch from history buffer
     g_from_history, r_from_history, embeds_from_history = history_buffer.get_from_history_buffer()
@@ -81,23 +93,13 @@ def train(fps, args):
   print('Total params: {} ({:.2f} MB)'.format(nparams, (float(nparams) * 4) / (1024 * 1024)))
 
   # Summarize
-  tf.summary.audio('x', x, _FS, max_outputs=10)
-  tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
-  tf.summary.text('Conditioning Text', cond_text[:10])
-  # tf.summary.text('Wrong Conditioning Text', wrong_cond_text[:10])
-  G_z_rms = tf.sqrt(tf.reduce_mean(tf.square(G_z[:, :, 0]), axis=1))
-  x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
-  tf.summary.histogram('x_rms_batch', x_rms)
-  tf.summary.histogram('G_z_rms_batch', G_z_rms)
-  # tf.summary.scalar('history_buffer_size', history_buffer.current_size)
+  tf.summary.scalar('history_buffer_size', history_buffer.current_size)
   tf.summary.scalar('g_from_history_size', tf.shape(g_from_history)[0])
   tf.summary.scalar('r_from_history_size', tf.shape(r_from_history)[0])
   tf.summary.scalar('embeds_from_history_size', tf.shape(embeds_from_history)[0])
   tf.summary.audio('G_z_history', g_from_history, _FS, max_outputs=10)
   tf.summary.audio('x_history', r_from_history, _FS, max_outputs=10)
   tf.summary.audio('wrong_audio', wrong_audio, _FS, max_outputs=10)
-  tf.summary.scalar('x_rms', tf.reduce_mean(x_rms))
-  tf.summary.scalar('G_z_rms', tf.reduce_mean(G_z_rms))
   tf.summary.scalar('Conditional Resample - KL-Loss', c_kl_loss)
   # tf.summary.scalar('embed_error_cosine', tf.reduce_sum(tf.multiply(cond_text_embed, expected_embed)) / (tf.norm(cond_text_embed) * tf.norm(expected_embed)))
   # tf.summary.scalar('embed_error_cosine_wrong', tf.reduce_sum(tf.multiply(wrong_cond_text_embed, expected_embed)) / (tf.norm(wrong_cond_text_embed) * tf.norm(expected_embed)))
