@@ -418,9 +418,6 @@ def WaveGANDiscriminator(
     embedding_dim=128,
     use_extra_uncond_output=False):
 
-  with tf.variable_scope('rms_stat'):
-    rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
-
   stage_1 = encode_audio_stage_1(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
 
   with tf.variable_scope('unconditional'):
@@ -434,9 +431,6 @@ def WaveGANDiscriminator(
       # [16384] -> [16384 + embedding_dim]
       c = compress_embedding(context_embedding, embedding_dim)
       cond_out = tf.concat([cond_out, c], 1)
-      
-      # RMS
-      cond_out = tf.concat([cond_out, rms], 1)
 
       # FC
       # [16384 + embedding_dim] -> [1024]
@@ -453,7 +447,6 @@ def WaveGANDiscriminator(
   with tf.variable_scope('output'):
     output = tf.layers.dense(output, 1)
     if (use_extra_uncond_output) and (context_embedding is not None):
-      uncond_out = tf.concat([uncond_out, rms], 1)
       uncond_out = tf.layers.dense(uncond_out, 1)
       return [output, uncond_out]
     else:
