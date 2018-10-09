@@ -93,12 +93,12 @@ def train(fps, args):
   print('Total params: {} ({:.2f} MB)'.format(nparams, (float(nparams) * 4) / (1024 * 1024)))
 
   # Summarize
-  tf.summary.scalar('history_buffer_size', history_buffer.current_size)
-  tf.summary.scalar('g_from_history_size', tf.shape(g_from_history)[0])
-  tf.summary.scalar('r_from_history_size', tf.shape(r_from_history)[0])
-  tf.summary.scalar('embeds_from_history_size', tf.shape(embeds_from_history)[0])
-  tf.summary.audio('G_z_history', g_from_history, _FS, max_outputs=10)
-  tf.summary.audio('x_history', r_from_history, _FS, max_outputs=10)
+  # tf.summary.scalar('history_buffer_size', history_buffer.current_size)
+  # tf.summary.scalar('g_from_history_size', tf.shape(g_from_history)[0])
+  # tf.summary.scalar('r_from_history_size', tf.shape(r_from_history)[0])
+  # tf.summary.scalar('embeds_from_history_size', tf.shape(embeds_from_history)[0])
+  # tf.summary.audio('G_z_history', g_from_history, _FS, max_outputs=10)
+  # tf.summary.audio('x_history', r_from_history, _FS, max_outputs=10)
   tf.summary.audio('wrong_audio', wrong_audio, _FS, max_outputs=10)
   tf.summary.scalar('Conditional Resample - KL-Loss', c_kl_loss)
   # tf.summary.scalar('embed_error_cosine', tf.reduce_sum(tf.multiply(cond_text_embed, expected_embed)) / (tf.norm(cond_text_embed) * tf.norm(expected_embed)))

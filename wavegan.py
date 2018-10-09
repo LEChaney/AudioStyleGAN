@@ -419,7 +419,9 @@ def WaveGANDiscriminator(
     use_extra_uncond_output=False):
 
   with tf.variable_scope('rms_stat'):
-    rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
+    rms = tf.reduce_mean(tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1)))
+    rms = tf.reshape(rms, [1, -1])
+    rms = tf.tile(rms, [tf.shape(x)[0], 1])
 
   stage_1 = encode_audio_stage_1(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
 
