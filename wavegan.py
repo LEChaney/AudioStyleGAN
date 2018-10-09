@@ -417,6 +417,12 @@ def WaveGANDiscriminator(
     context_embedding=None,
     embedding_dim=128,
     use_extra_uncond_output=False):
+
+  with tf.variable_scope('rms_stat'):
+    rms = tf.reduce_mean(tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1)))
+    rms = tf.reshape(rms, [1, -1])
+    rms = tf.tile(rms, [tf.shape(x)[0], 1])
+
   stage_1 = encode_audio_stage_1(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
 
   with tf.variable_scope('unconditional'):
@@ -430,26 +436,26 @@ def WaveGANDiscriminator(
       # [16384] -> [16384 + embedding_dim]
       c = compress_embedding(context_embedding, embedding_dim)
       cond_out = tf.concat([cond_out, c], 1)
-      output = cond_out
+      
+      # RMS
+      cond_out = tf.concat([cond_out, rms], 1)
+
+      # FC
+      # [16384 + embedding_dim] -> [1024]
+      with tf.variable_scope('FC'):
+        cond_out = tf.layers.dense(cond_out, dim * 16)
+        cond_out = lrelu(cond_out)
+        cond_out = tf.layers.dropout(cond_out)
+        output = cond_out
   else:
     output = uncond_out
-
-  # FC
-  # [16384 + embedding_dim] -> [1024]
-  with tf.variable_scope('FC'):
-    output = tf.layers.dense(output, dim * 16)
-    output = lrelu(output)
-    output = tf.layers.dropout(output)
 
   # Connect to single logit
   # [16384] -> [1]
   with tf.variable_scope('output'):
     output = tf.layers.dense(output, 1)
     if (use_extra_uncond_output) and (context_embedding is not None):
-      with tf.variable_scope('FC_uncond'):
-        uncond_out = tf.layers.dense(uncond_out, dim * 16)
-        uncond_out = lrelu(uncond_out)
-        uncond_out = tf.layers.dropout(uncond_out)
+      uncond_out = tf.concat([uncond_out, rms], 1)
       uncond_out = tf.layers.dense(uncond_out, 1)
       return [output, uncond_out]
     else:
