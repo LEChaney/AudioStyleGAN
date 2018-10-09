@@ -4,7 +4,6 @@ python train_wavegan.py train .\train ^
 --data_first_window ^
 --wavegan_genr_pp ^
 --wavegan_loss dcgan ^
---wavegan_disc_phaseshuffle 0 ^
 --train_summary_secs 5
 
 REM --use_extra_uncond_loss ^
@@ -13,3 +12,4 @@ REM --wavegan_batchnorm ^
 REM --wavegan_disc_nupdates 1 ^
 REM --wavegan_genr_upsample nn ^
 REM --wavegan_kernel_len 8 ^
+REM --wavegan_disc_phaseshuffle 0 ^
