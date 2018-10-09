@@ -5,6 +5,7 @@ python train_wavegan.py train .\train ^
 --wavegan_genr_pp ^
 --wavegan_loss dcgan ^
 --use_extra_uncond_loss ^
+--wavegan_disc_nupdates 1 ^
 --train_summary_secs 5
 
 REM --use_extra_uncond_loss ^
