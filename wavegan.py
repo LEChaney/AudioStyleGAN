@@ -311,21 +311,12 @@ def apply_phaseshuffle(x, rad, pad_type='reflect'):
   return x
 
 
-"""
-  Input: [None, 16384, 1]
-  Output: [None] (linear output)
-"""
-def WaveGANDiscriminator(
-    x,
+def encode_audio( x,
     kernel_len=24,
     dim=64,
     use_batchnorm=False,
     phaseshuffle_rad=0,
-    context_embedding=None,
-    embedding_dim=128,
-    use_extra_uncond_output=False):
-  batch_size = tf.shape(x)[0]
-
+    embedding_dim=128):
   if use_batchnorm:
     batchnorm = lambda x: tf.layers.batch_normalization(x, training=True)
   else:
@@ -381,34 +372,58 @@ def WaveGANDiscriminator(
   # with tf.variable_scope('stats_blend'):
   #   output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
   #   output = batchnorm(output)
-  # hidden = lrelu(output)
+  # output = lrelu(output)
 
-  # Flatten
+    # Flatten
   # [16, 1024] -> [16384]
-  hidden = tf.reshape(output, [batch_size, -1])
+  batch_size = tf.shape(x)[0]
+  output = tf.reshape(output, [batch_size, -1])
 
+  return output
+
+
+"""
+  Input: [None, 16384, 1]
+  Output: [None] (linear output)
+"""
+def WaveGANDiscriminator(
+    x,
+    kernel_len=24,
+    dim=64,
+    use_batchnorm=False,
+    phaseshuffle_rad=0,
+    context_embedding=None,
+    embedding_dim=128,
+    use_extra_uncond_output=False):
+  with tf.variable_scope('unconditional'):
+    uncond_out = encode_audio(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+  
   if (context_embedding is not None):
-    # Concat context embeddings
-    # [16384] -> [16384 + embedding_dim]
-    c = compress_embedding(context_embedding, embedding_dim)
-    output = tf.concat([hidden, c], 1)
+    with tf.variable_scope('conditional'):
+      cond_out = encode_audio(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
 
-    # FC
-    # [16384 + embedding_dim] -> [1024]
-    with tf.variable_scope('FC'):
-      output = tf.layers.dense(output, dim * 16)
-      output = lrelu(output)
-      output = tf.layers.dropout(output)
+      # Concat context embeddings
+      # [16384] -> [16384 + embedding_dim]
+      c = compress_embedding(context_embedding, embedding_dim)
+      cond_out = tf.concat([cond_out, c], 1)
+
+      # FC
+      # [16384 + embedding_dim] -> [1024]
+      with tf.variable_scope('FC'):
+        cond_out = tf.layers.dense(cond_out, dim * 16)
+        cond_out = lrelu(cond_out)
+        cond_out = tf.layers.dropout(cond_out)
+        output = cond_out
   else:
-    output = hidden
+    output = uncond_out
 
   # Connect to single logit
   # [16384] -> [1]
   with tf.variable_scope('output'):
     output = tf.layers.dense(output, 1)
     if (use_extra_uncond_output) and (context_embedding is not None):
-      uncond_output = tf.layers.dense(hidden, 1)
-      return [output, uncond_output]
+      uncond_out = tf.layers.dense(uncond_out, 1)
+      return [output, uncond_out]
     else:
       return [output]
 
