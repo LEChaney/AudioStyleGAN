@@ -350,8 +350,7 @@ def train(fps, args):
   # Create training ops
   G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
       global_step=tf.train.get_or_create_global_step())
-  D_train_op = D_opt.minimize(D_loss, var_list=D_vars,
-      global_step=tf.train.get_or_create_global_step())
+  D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
 
   # Run training
   with tf.train.MonitoredTrainingSession(
@@ -369,7 +368,7 @@ def train(fps, args):
           sess.run(D_clip_weights)
 
       # Train generator
-      # sess.run(G_train_op)
+      sess.run(G_train_op)
 
 
 """
