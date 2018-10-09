@@ -311,7 +311,7 @@ def apply_phaseshuffle(x, rad, pad_type='reflect'):
   return x
 
 
-def encode_audio( x,
+def encode_audio_stage_1(x,
     kernel_len=24,
     dim=64,
     use_batchnorm=False,
@@ -327,59 +327,80 @@ def encode_audio( x,
   else:
     phaseshuffle = lambda x: x
 
-  # Layer 0
-  # [16384, 1] -> [4096, 64]
-  output = x
-  with tf.variable_scope('downconv_0'):
-    output = tf.layers.conv1d(output, dim, kernel_len, 4, padding='SAME')
-    output = batchnorm(output)
-    output = lrelu(output)
-    output = phaseshuffle(output)
+  with tf.variable_scope('audio_encode_stage_1'):
+    # Layer 0
+    # [16384, 1] -> [4096, 64]
+    output = x
+    with tf.variable_scope('downconv_0'):
+      output = tf.layers.conv1d(output, dim, kernel_len, 4, padding='SAME')
+      output = batchnorm(output)
+      output = lrelu(output)
+      output = phaseshuffle(output)
 
-  # Layer 1
-  # [4096, 64] -> [1024, 128]
-  with tf.variable_scope('downconv_1'):
-    output = tf.layers.conv1d(output, dim * 2, kernel_len, 4, padding='SAME')
-    output = batchnorm(output)
-    output = lrelu(output)
-    output = phaseshuffle(output)
+    # Layer 1
+    # [4096, 64] -> [1024, 128]
+    with tf.variable_scope('downconv_1'):
+      output = tf.layers.conv1d(output, dim * 2, kernel_len, 4, padding='SAME')
+      output = batchnorm(output)
+      output = lrelu(output)
+      output = phaseshuffle(output)
 
-  # Layer 2
-  # [1024, 128] -> [256, 256]
-  with tf.variable_scope('downconv_2'):
-    output = tf.layers.conv1d(output, dim * 4, kernel_len, 4, padding='SAME')
-    output = batchnorm(output)
-    output = lrelu(output)
-    output = phaseshuffle(output)
+    # Layer 2
+    # [1024, 128] -> [256, 256]
+    with tf.variable_scope('downconv_2'):
+      output = tf.layers.conv1d(output, dim * 4, kernel_len, 4, padding='SAME')
+      output = batchnorm(output)
+      output = lrelu(output)
+      output = phaseshuffle(output)
 
-  # Layer 3
-  # [256, 256] -> [64, 512]
-  with tf.variable_scope('downconv_3'):
-    output = tf.layers.conv1d(output, dim * 8, kernel_len, 4, padding='SAME')
-    output = batchnorm(output)
-    output = lrelu(output)
-    output = phaseshuffle(output)
+    return output
 
-  # Layer 4
-  # [64, 512] -> [16, 1024]
-  with tf.variable_scope('downconv_4'):
-    output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
-    output = batchnorm(output)
-    output = lrelu(output)
 
-  # Add explicit statistics
-  # output = minibatch_stddev_layer(output)
-  # with tf.variable_scope('stats_blend'):
-  #   output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
-  #   output = batchnorm(output)
-  # output = lrelu(output)
+def encode_audio_stage_2(x,
+    kernel_len=24,
+    dim=64,
+    use_batchnorm=False,
+    phaseshuffle_rad=0,
+    embedding_dim=128):
+  if use_batchnorm:
+    batchnorm = lambda x: tf.layers.batch_normalization(x, training=True)
+  else:
+    batchnorm = lambda x: x
 
-    # Flatten
-  # [16, 1024] -> [16384]
-  batch_size = tf.shape(x)[0]
-  output = tf.reshape(output, [batch_size, -1])
+  if phaseshuffle_rad > 0:
+    phaseshuffle = lambda x: apply_phaseshuffle(x, phaseshuffle_rad)
+  else:
+    phaseshuffle = lambda x: x
 
-  return output
+  with tf.variable_scope('audio_encode_stage_2'):
+    # Layer 3
+    # [256, 256] -> [64, 512]
+    with tf.variable_scope('downconv_3'):
+      output = tf.layers.conv1d(output, dim * 8, kernel_len, 4, padding='SAME')
+      output = batchnorm(output)
+      output = lrelu(output)
+      output = phaseshuffle(output)
+
+    # Layer 4
+    # [64, 512] -> [16, 1024]
+    with tf.variable_scope('downconv_4'):
+      output = tf.layers.conv1d(output, dim * 16, kernel_len, 4, padding='SAME')
+      output = batchnorm(output)
+      output = lrelu(output)
+
+    # Add explicit statistics
+    # output = minibatch_stddev_layer(output)
+    # with tf.variable_scope('stats_blend'):
+    #   output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
+    #   output = batchnorm(output)
+    # output = lrelu(output)
+
+      # Flatten
+    # [16, 1024] -> [16384]
+    batch_size = tf.shape(x)[0]
+    output = tf.reshape(output, [batch_size, -1])
+
+    return output
 
 
 """
@@ -395,12 +416,15 @@ def WaveGANDiscriminator(
     context_embedding=None,
     embedding_dim=128,
     use_extra_uncond_output=False):
+
+  stage_1 = encode_audio_stage_1(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+
   with tf.variable_scope('unconditional'):
-    uncond_out = encode_audio(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+    uncond_out = encode_audio_stage_2(stage_1, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
   
   if (context_embedding is not None):
     with tf.variable_scope('conditional'):
-      cond_out = encode_audio(x, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+      cond_out = encode_audio_stage_2(stage_1, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
 
       # Concat context embeddings
       # [16384] -> [16384 + embedding_dim]
