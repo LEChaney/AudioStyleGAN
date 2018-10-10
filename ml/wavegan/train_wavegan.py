@@ -273,16 +273,35 @@ def train(fps, args):
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
-    alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
-    differences = G_z - x
-    interpolates = x + (alpha * differences)
+    # Conditional Gradient Penalty
+    alpha = tf.random_uniform(shape=[args.train_batch_size * 2, 1, 1], minval=0., maxval=1.)
+    real = tf.concat([x, x], 0)
+    fake = tf.concat([G_z, wrong_audio], 0)
+    differences = fake - real
+    interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, **args.wavegan_d_kwargs)
+      D_interp = WaveGANDiscriminator(interpolates, **args.wavegan_d_kwargs)[0] # Only want conditional output
 
-    LAMBDA = 10
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
-    gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
+    cond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
+
+    # Unconditional Gradient Penalty
+    alpha = tf.random_uniform(shape=[args.train_batch_size * 2, 1, 1], minval=0., maxval=1.)
+    real = tf.concat([x, wrong_audio], 0)
+    fake = tf.concat([G_z, G_z], 0)
+    differences = fake - real
+    interpolates = real + (alpha * differences)
+    with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
+      D_interp = WaveGANDiscriminator(interpolates, **args.wavegan_d_kwargs)[1] # Only want unconditional output
+
+    gradients = tf.gradients(D_interp, [interpolates])[0]
+    slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
+    uncond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
+
+    gradient_penalty = (cond_gradient_penalty + uncond_gradient_penalty) / 2
+
+    LAMBDA = 10
     D_loss += LAMBDA * gradient_penalty
   else:
     raise NotImplementedError()
