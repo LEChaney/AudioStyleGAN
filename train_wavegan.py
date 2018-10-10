@@ -248,6 +248,7 @@ def train(fps, args):
     # Unconditional G Loss
     if args.use_extra_uncond_loss:
       G_loss += -tf.reduce_mean(D_G_z[1])
+      G_loss /= 2
 
     # Conditional D Loss
     D_loss_real = -tf.reduce_mean(D_x[0])
@@ -262,6 +263,7 @@ def train(fps, args):
 
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
              + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
+      D_loss /= 2
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
@@ -290,8 +292,8 @@ def train(fps, args):
       tf.summary.scalar('Critic Score - Real Data', -D_loss_real_uncond)
       tf.summary.scalar('Critic Score - Fake Data', D_loss_fake_uncond)
       tf.summary.scalar('Wasserstein Distance - No Regularization Term',
-                        -(D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
-                        + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond))
+                        -((D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
+                        + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond) / 2))
     else:
       tf.summary.scalar('Critic Score - Real Data', -D_loss_real)
       tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
