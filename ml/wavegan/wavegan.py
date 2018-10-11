@@ -164,7 +164,7 @@ def sample_context_embeddings(embedding, embed_size, train=False):
   from the supplied context embedding.
     embedding - The input context from which to derive the sampling distribution
     embed_size - The size of output embedding vector
-    train - A flag 
+    train - Whether to do resample or just reduce the embedding
   """
   mean, log_sigma = generate_context_dist_params(embedding, embed_size, train)
   if train:
@@ -218,10 +218,11 @@ def WaveGANGenerator(
 
   if (context_embedding is not None):
     # Reduce or expand context embedding to be size [embedding_dim]
-    c = compress_embedding(context_embedding, embedding_dim)
+    c, kl_loss = sample_context_embeddings(context_embedding, embedding_dim, train)
     output = tf.concat([z, c], 1)
   else:
     output = z
+    kl_loss = 0
 
   # FC and reshape for convolution
   # [100 + context_embedding size] -> [16, 1024]
@@ -294,7 +295,7 @@ def WaveGANGenerator(
     with tf.control_dependencies(update_ops):
       output = tf.identity(output)
 
-  return output, 0
+  return output, kl_loss
 
 
 def apply_phaseshuffle(x, rad, pad_type='reflect'):
