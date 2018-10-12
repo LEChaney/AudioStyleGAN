@@ -179,7 +179,6 @@ def train(fps, args):
 
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
              + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
-      D_loss /= 2
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
   elif args.wavegan_loss == 'lsgan':
@@ -343,8 +342,8 @@ def train(fps, args):
       tf.summary.scalar('D_loss_cond_fake', D_loss_fake)
       tf.summary.scalar('D_loss_uncond_fake', D_loss_fake_uncond)
       tf.summary.scalar('D_loss_unregularized', 
-                         (D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
-                        + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond) / 2)
+                         D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
+                       + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond)
     else:
       tf.summary.scalar('D_acc', 0.5 * (tf.reduce_mean(tf.sigmoid(D_x[0])) \
                                       + 0.5 * (tf.reduce_mean(1 - tf.sigmoid(D_w[0])) + tf.reduce_mean(1 - tf.sigmoid(D_G_z[0])))))
