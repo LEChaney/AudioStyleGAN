@@ -177,8 +177,8 @@ def train(fps, args):
         labels=real
       ))
 
-      D_loss = D_loss_real + D_loss_wrong + D_loss_fake \
-             + D_loss_real_uncond + D_loss_wrong_uncond + D_loss_fake_uncond
+      D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
+             + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
       D_loss /= 2
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
@@ -332,10 +332,10 @@ def train(fps, args):
     tf.summary.scalar('Wasserstein Distance - With Regularization Term', -D_loss)
   else:
     if args.use_extra_uncond_loss:
-      tf.summary.scalar('D_acc_uncond', 0.5 * (tf.reduce_mean(tf.sigmoid(D_x[1])) + tf.reduce_mean(tf.sigmoid(D_w[1])) \
+      tf.summary.scalar('D_acc_uncond', 0.5 * ((0.5 * (tf.reduce_mean(tf.sigmoid(D_x[1])) + tf.reduce_mean(tf.sigmoid(D_w[1])))) \
                                              + tf.reduce_mean(1 - tf.sigmoid(D_G_z[1]))))
       tf.summary.scalar('D_acc', 0.5 * (tf.reduce_mean(tf.sigmoid(D_x[0])) \
-                                      + tf.reduce_mean(1 - tf.sigmoid(D_w[0])) + tf.reduce_mean(1 - tf.sigmoid(D_G_z[0]))))
+                                      + 0.5 * (tf.reduce_mean(1 - tf.sigmoid(D_w[0])) + tf.reduce_mean(1 - tf.sigmoid(D_G_z[0])))))
       tf.summary.scalar('D_loss_cond_real', D_loss_real)
       tf.summary.scalar('D_loss_uncond_real', D_loss_real_uncond)
       tf.summary.scalar('D_loss_cond_wrong', D_loss_wrong)
