@@ -218,7 +218,8 @@ def WaveGANGenerator(
 
   if (context_embedding is not None):
     # Reduce or expand context embedding to be size [embedding_dim]
-    c, kl_loss = sample_context_embeddings(context_embedding, embedding_dim, train)
+    c = compress_embedding(context_embedding, embedding_dim)
+    kl_loss = 0
     output = tf.concat([z, c], 1)
   else:
     output = z
