@@ -388,6 +388,26 @@ def train(fps, args):
   G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
       global_step=tf.train.get_or_create_global_step())
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
+  D_warmup_op = D_opt.minimize(D_loss, var_list=D_vars,
+      global_step=tf.train.get_or_create_global_step())
+
+  # Run disciminator warmup training
+  num_warmup_steps = 2000
+  print('Warming Up Discriminator...')
+  with tf.train.MonitoredTrainingSession(
+      checkpoint_dir=args.train_dir,
+      save_checkpoint_secs=args.train_save_secs,
+      save_summaries_secs=args.train_summary_secs,
+      summary_dir=os.path.join(args.train_dir, 'warmup/')) as sess:
+    global_step = sess.run(tf.train.get_or_create_global_step())
+    for _ in range(max(num_warmup_steps - global_step, 0)):
+      # Train discriminator
+      sess.run(D_warmup_op)
+
+      # Enforce Lipschitz constraint for WGAN
+      if D_clip_weights is not None:
+        sess.run(D_clip_weights)
+  print('Discriminator Warmup Complete!')
 
   # Run training
   with tf.train.MonitoredTrainingSession(
