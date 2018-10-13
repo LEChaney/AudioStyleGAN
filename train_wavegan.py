@@ -273,6 +273,9 @@ def train(fps, args):
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
+    # Warmup Conditional Loss
+    D_warmup_loss = D_loss_real + D_loss_wrong
+
     # Stack duplicate context embeddings for extra interps on wrong audio
     interp_args = args.wavegan_d_kwargs.copy()
     interp_args['context_embedding'] = tf.concat([interp_args['context_embedding'], interp_args['context_embedding']], 0)
@@ -285,7 +288,6 @@ def train(fps, args):
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
       D_interp = WaveGANDiscriminator(interpolates, **interp_args)[0] # Only want conditional output
-
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     cond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
@@ -298,15 +300,27 @@ def train(fps, args):
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
       D_interp = WaveGANDiscriminator(interpolates, **interp_args)[1] # Only want unconditional output
-
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     uncond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
+
+    # Warmup Gradient Penalty
+    alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
+    real = x
+    fake = wrong_audio
+    differences = fake - real
+    interpolates = real + (alpha * differences)
+    with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
+      D_interp = WaveGANDiscriminator(interpolates, **args.wavegan_d_kwargs)[0] # Only want conditional output
+    gradients = tf.gradients(D_interp, [interpolates])[0]
+    slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
+    warmup_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
 
     gradient_penalty = (cond_gradient_penalty + uncond_gradient_penalty) / 2
 
     LAMBDA = 10
     D_loss += LAMBDA * gradient_penalty
+    D_warmup_loss += LAMBDA * warmup_gradient_penalty
   else:
     raise NotImplementedError()
 
@@ -388,7 +402,7 @@ def train(fps, args):
   G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
       global_step=tf.train.get_or_create_global_step())
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
-  D_warmup_op = D_opt.minimize(D_loss, var_list=D_vars,
+  D_warmup_op = D_opt.minimize(D_warmup_loss, var_list=D_vars,
       global_step=tf.train.get_or_create_global_step())
 
   # Run disciminator warmup training
