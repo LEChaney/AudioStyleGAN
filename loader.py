@@ -114,7 +114,7 @@ def get_batch(
   dataset = dataset.batch(batch_size, drop_remainder=True)
   if repeat:
     dataset = dataset.repeat()
-  dataset = dataset.apply(tf.contrib.data.prefetch_to_device('/gpu:0'))
+  dataset = dataset.apply(tf.contrib.data.prefetch_to_device('/gpu:0', 128))
   iterator = dataset.make_one_shot_iterator()
 
   return iterator.get_next(name=name)
