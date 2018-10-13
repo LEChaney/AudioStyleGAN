@@ -9,6 +9,10 @@
 *.tar.gz
 *.tfrecord
 train*/
-eval/
 web/ckpts
 embed_visualization/
+*.data*
+*.index
+*.meta
+*.pbtxt
+*.pkl
