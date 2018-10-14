@@ -1,6 +1,22 @@
 import tensorflow as tf
 
 
+def nn_upsample(inputs, stride=4):
+  '''
+  Upsamples an audio clip using nearest neighbor upsampling.
+  Output is of size 'audio clip length' x 'stride'
+  '''
+  w = tf.shape(inputs)[1]
+  output = tf.expand_dims(inputs, axis=1)
+  output = tf.image.resize_nearest_neighbor(output, [1, w * stride])
+  output = output[:, 0]
+  return output
+
+
+def avg_downsample(inputs, stride=4):
+  return tf.layers.average_pooling1d(inputs, pool_size=stride, strides=stride, padding='same')
+
+
 def custom_conv1d(
     inputs,
     filters,
@@ -17,14 +33,7 @@ def custom_conv1d(
         padding='same'
         )[:, 0]
   elif upsample == 'nn':
-    batch_size = tf.shape(inputs)[0]
-    _, w, nch = inputs.get_shape().as_list()
-
-    x = inputs
-
-    x = tf.expand_dims(x, axis=1)
-    x = tf.image.resize_nearest_neighbor(x, [1, w * stride])
-    x = x[:, 0]
+    x = nn_upsample(inputs, stride)
 
     return tf.layers.conv1d(
         x,
@@ -39,6 +48,59 @@ def custom_conv1d(
         kernel_width, 
         strides=stride, 
         padding='same')
+
+
+def lrelu(inputs, alpha=0.2):
+  return tf.maximum(alpha * inputs, inputs)
+  
+
+def to_audio(inputs):
+  '''
+  Converts 2d feature map into an audio clip.
+  '''
+  with tf.variable_scope('to_audio'):
+    return tf.layers.conv1d(inputs, filters=1, kernel_size=1, strides=1, padding='same')
+
+def from_audio(inputs, out_feature_maps):
+  '''
+  Converts an input audio clips into a 2d feature maps.
+  :param out_feature_maps: The number of feature maps to output.
+  '''
+  with tf.variable_scope('from_audio'):
+    return tf.layers.conv1d(inputs, filters=1, kernel_size=1, strides=1, padding='same')
+
+
+def up_block(inputs, audio_lod, filters, kernel_size=9, on_amount=1, stride=4, activation=tf.nn.tanh, is_gated=True):
+  skip_connection = nn_upsample(audio_lod, stride)
+
+  CONVS_PER_BLOCK = 2
+  output = nn_upsample(inputs, stride)
+  for i in range(CONVS_PER_BLOCK):
+    with tf.variable_scope('conv_{}'.format(i)):
+      output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
+      if is_gated:
+        gate = tf.sigmoid(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
+        output = gate * output
+  
+  audio_lod = to_audio(output)
+  audio_lod = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: on_amount * audio_lod + (1 - on_amount) * skip_connection)
+
+  return output, audio_lod
+
+
+def down_block(inputs, audio_lod, filters, kernel_size=9, on_amount=1, stride=4, activation=lrelu):
+  audio_lod = avg_downsample(audio_lod, stride)
+  skip_connection = from_audio(audio_lod, filters)
+
+  with tf.variable_scope('conv_1'):
+    output = activation(tf.layers.conv1d(inputs, inputs.shape[2], kernel_size, strides=1, padding='same'))
+  with tf.variable_scope('conv_2'):
+    output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=stride, padding='same'))
+
+  ouput = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: on_amount * output + (1 - on_amount) * skip_connection)
+
+  return ouput, audio_lod
+
 
 def residual_unit(    
     inputs,
@@ -114,10 +176,6 @@ def inception_block(inputs, filters_internal=64, kernel_width=24):
   output = tf.layers.conv1d(concat, inputs.shape[-1], 1, padding="SAME")
 
   return shortcut + output
-
-
-def lrelu(inputs, alpha=0.2):
-  return tf.maximum(alpha * inputs, inputs)
 
 
 def compress_embedding(embedding, embed_size):
