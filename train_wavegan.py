@@ -447,7 +447,7 @@ def train(fps, args):
       save_summaries_secs=args.train_summary_secs) as sess:
     #summary_writer = SummaryWriterCache.get(args.train_dir)
     while True:
-      step = tf.train.get_or_create_global_step().eval(sess)
+      step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: 0})
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
