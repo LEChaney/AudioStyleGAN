@@ -419,7 +419,7 @@ def train(fps, args):
   G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
       global_step=tf.train.get_or_create_global_step())
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
-  D_warmup_op = D_opt.minimize(D_loss, var_list=D_vars,
+  D_warmup_op = D_opt.minimize(D_warmup_loss, var_list=D_vars,
       global_step=tf.train.get_or_create_global_step())
 
   # Run disciminator warmup training
