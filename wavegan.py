@@ -1,6 +1,10 @@
 import tensorflow as tf
 
 
+def lerp_clip(a, b, t): 
+  return a + (b - a) * tf.clip_by_value(t, 0.0, 1.0)
+
+
 def nn_upsample(inputs, stride=4):
   '''
   Upsamples an audio clip using nearest neighbor upsampling.
@@ -70,36 +74,44 @@ def from_audio(inputs, out_feature_maps):
     return tf.layers.conv1d(inputs, filters=1, kernel_size=1, strides=1, padding='same')
 
 
-def up_block(inputs, audio_lod, filters, kernel_size=9, on_amount=1, stride=4, activation=tf.nn.tanh, is_gated=True):
-  skip_connection = nn_upsample(audio_lod, stride)
+def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=tf.nn.tanh, is_gated=True):
+  '''
+  Up Block
+  '''
+  with tf.variable_scope('up_block'):
+    skip_connection = nn_upsample(audio_lod, stride)
 
-  CONVS_PER_BLOCK = 2
-  output = nn_upsample(inputs, stride)
-  for i in range(CONVS_PER_BLOCK):
-    with tf.variable_scope('conv_{}'.format(i)):
-      output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
-      if is_gated:
-        gate = tf.sigmoid(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
-        output = gate * output
-  
-  audio_lod = to_audio(output)
-  audio_lod = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: on_amount * audio_lod + (1 - on_amount) * skip_connection)
+    CONVS_PER_BLOCK = 2
+    output = nn_upsample(inputs, stride)
+    for i in range(CONVS_PER_BLOCK):
+      with tf.variable_scope('conv_{}'.format(i)):
+        output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
+        if is_gated:
+          gate = tf.sigmoid(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
+          output = gate * output
+    
+    audio_lod = to_audio(output)
+    audio_lod = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: lerp_clip(skip_connection, audio_lod, on_amount))
 
-  return output, audio_lod
+    return output, audio_lod
 
 
-def down_block(inputs, audio_lod, filters, kernel_size=9, on_amount=1, stride=4, activation=lrelu):
-  audio_lod = avg_downsample(audio_lod, stride)
-  skip_connection = from_audio(audio_lod, filters)
+def down_block(inputs, audio_lod, filters, kernel_size=9, on_amount=0, stride=4, activation=lrelu):
+  '''
+  Down Block
+  '''
+  with tf.variable_scope('down_block'):
+    audio_lod = avg_downsample(audio_lod, stride)
+    skip_connection = from_audio(audio_lod, filters)
 
-  with tf.variable_scope('conv_1'):
-    output = activation(tf.layers.conv1d(inputs, inputs.shape[2], kernel_size, strides=1, padding='same'))
-  with tf.variable_scope('conv_2'):
-    output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=stride, padding='same'))
+    with tf.variable_scope('conv_1'):
+      output = activation(tf.layers.conv1d(inputs, inputs.shape[2], kernel_size, strides=1, padding='same'))
+    with tf.variable_scope('conv_2'):
+      output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=stride, padding='same'))
 
-  ouput = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: on_amount * output + (1 - on_amount) * skip_connection)
+    ouput = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: lerp_clip(skip_connection, output, on_amount))
 
-  return ouput, audio_lod
+    return ouput, audio_lod
 
 
 def residual_unit(    
@@ -260,6 +272,7 @@ def minibatch_stddev_layer(x, group_size=4):
 """
 def WaveGANGenerator(
     z,
+    lod,
     kernel_len=24,
     dim=64,
     use_batchnorm=False,
@@ -286,65 +299,41 @@ def WaveGANGenerator(
   # FC and reshape for convolution
   # [100 + context_embedding size] -> [16, 1024]
   with tf.variable_scope('z_project'):
-    output = tf.layers.dense(output, 4 * 4 * dim * 2)
-    output = tf.reshape(output, [batch_size, 16, dim * 2])
+    output = tf.layers.dense(output, 4 * 4 * dim * 16)
+    output = tf.reshape(output, [batch_size, 16, dim * 16])
     output = tf.nn.relu(output)
     # output = batchnorm(output)
 
-  # Dense 0
-  # [16, 128] -> [16, 1024]
-  with tf.variable_scope('dense_0'):
-    output = dense_block(output, 7, dim * 2, kernel_len, batchnorm_fn=batchnorm)
+  with tf.variable_scope('layer_0'):
+    output = residual_unit(output, filters=dim * 16, kernel_width=kernel_len)
     output = batchnorm(output)
-    
-
-  # Layer 0
-  # [16, 1024] -> [64, 256]
-  with tf.variable_scope('upconv_0'):
-    output = residual_unit(output, dim * 4, kernel_len, 4, upsample=upsample)
-    output = batchnorm(output)
-
-  # Dense 1
-  # [64, 256] -> [64, 512]
-  with tf.variable_scope('dense_1'):
-    output = dense_block(output, 4, dim, kernel_len, batchnorm_fn=batchnorm)
+    output = residual_unit(output, filters=dim * 16, kernel_width=kernel_len)
     output = batchnorm(output)
 
   # Layer 1
-  # [64, 512] -> [256, 64]
+  # [16, 1024] -> [64, 512]
   with tf.variable_scope('upconv_1'):
-    output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
-    output = batchnorm(output)
-
-  # Dense 2
-  # [256, 64] -> [256, 256]
-  with tf.variable_scope('dense_2'):
-    output = dense_block(output, 3, dim, kernel_len, batchnorm_fn=batchnorm)
-    output = batchnorm(output)
+    output, audio_lod = up_block(output, audio_lod=to_audio(output), filters=dim * 8, kernel_size=kernel_len, on_amount=lod-0)
 
   # Layer 2
-  # [256, 256] -> [1024, 64]
+  # [64, 512] -> [256, 256]
   with tf.variable_scope('upconv_2'):
-    output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
-    output = batchnorm(output)
+    output, audio_lod = up_block(output, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=lod-1)
 
-  # Dense 3
-  # [1024, 64] -> [1024, 128]
-  with tf.variable_scope('dense_3'):
-    output = dense_block(output, 1, dim, kernel_len, batchnorm_fn=batchnorm)
-    output = batchnorm(output)
+  # Layer 3
+  # [256, 256] -> [1024, 128]
+  with tf.variable_scope('upconv_3'):
+    output, audio_lod = up_block(output, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=lod-2)
 
   # Layer 3
   # [1024, 128] -> [4096, 64]
-  with tf.variable_scope('upconv_3'):
-    output = residual_unit(output, dim, kernel_len, 4, upsample=upsample)
-    output = batchnorm(output)
+  with tf.variable_scope('upconv_4'):
+    output, audio_lod = up_block(output, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, on_amount=lod-3)
 
   # Layer 4
   # [4096, 64] -> [16384, 1]
-  with tf.variable_scope('upconv_4'):
-    output = residual_unit(output, 1, kernel_len, 4, upsample=upsample)
-  #output = tf.nn.tanh(output)
+  with tf.variable_scope('upconv_5'):
+    output, audio_lod = up_block(output, audio_lod=audio_lod, filters=1, kernel_size=kernel_len, on_amount=lod-4)
 
   # Automatically update batchnorm moving averages every time G is used during training
   if train and use_batchnorm:
