@@ -447,16 +447,18 @@ def train(fps, args):
       save_summaries_secs=args.train_summary_secs) as sess:
     #summary_writer = SummaryWriterCache.get(args.train_dir)
     while True:
+      step = tf.train.get_or_create_global_step().eval(sess)
+
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
-        sess.run(D_train_op, feed_dict={lod: 0})
+        sess.run(D_train_op, feed_dict={lod: step / 2000})
 
         # Enforce Lipschitz constraint for WGAN
         if D_clip_weights is not None:
-          sess.run(D_clip_weights, feed_dict={lod: 0})
+          sess.run(D_clip_weights, feed_dict={lod: step / 2000})
 
       # Train generator
-      sess.run(G_train_op)
+      sess.run(G_train_op, feed_dict={lod: step / 2000})
 
 
 """
