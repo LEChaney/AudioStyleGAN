@@ -43,7 +43,7 @@ def train(fps, args):
   args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
   args.wavegan_d_kwargs['context_embedding'] = args.wavegan_g_kwargs['context_embedding']
 
-  lod = tf.placeholder(tf.float32)
+  lod = tf.placeholder(tf.float32, shape=[])
   
   with tf.variable_scope('G'):
     # Make generator
@@ -108,7 +108,7 @@ def train(fps, args):
 
   # Make real discriminator
   with tf.name_scope('D_x'), tf.variable_scope('D'):
-    D_x = WaveGANDiscriminator(x, **args.wavegan_d_kwargs)
+    D_x = WaveGANDiscriminator(x, lod, **args.wavegan_d_kwargs)
   D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='D')
 
   # Print D summary
@@ -125,9 +125,9 @@ def train(fps, args):
 
   # Make fake / wrong discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
-    D_G_z = WaveGANDiscriminator(G_z, **args.wavegan_d_kwargs)
+    D_G_z = WaveGANDiscriminator(G_z, lod, **args.wavegan_d_kwargs)
   with tf.name_scope('D_w'), tf.variable_scope('D', reuse=True):
-    D_w = WaveGANDiscriminator(wrong_audio, **args.wavegan_d_kwargs)
+    D_w = WaveGANDiscriminator(wrong_audio, lod, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
@@ -298,7 +298,7 @@ def train(fps, args):
     differences = fake - real
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, **interp_args)[0] # Only want conditional output
+      D_interp = WaveGANDiscriminator(interpolates, lod, **interp_args)[0] # Only want conditional output
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     cond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
@@ -310,7 +310,7 @@ def train(fps, args):
     differences = fake - real
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, **interp_args)[1] # Only want unconditional output
+      D_interp = WaveGANDiscriminator(interpolates, lod, **interp_args)[1] # Only want unconditional output
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     uncond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
@@ -322,7 +322,7 @@ def train(fps, args):
     # differences = fake - real
     # interpolates = real + (alpha * differences)
     # with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-    #   D_interp = WaveGANDiscriminator(interpolates, **args.wavegan_d_kwargs)[0] # Only want conditional output
+    #   D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[0] # Only want conditional output
     # gradients = tf.gradients(D_interp, [interpolates])[0]
     # slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     # warmup_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
