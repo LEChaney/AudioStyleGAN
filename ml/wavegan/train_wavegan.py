@@ -43,13 +43,15 @@ def train(fps, args):
   args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
   args.wavegan_d_kwargs['context_embedding'] = args.wavegan_g_kwargs['context_embedding']
 
+  lod = tf.placeholder(tf.float32)
+  
   with tf.variable_scope('G'):
     # Make generator
-    G_z, c_kl_loss = WaveGANGenerator(z, train=True, **args.wavegan_g_kwargs)
+    G_z, c_kl_loss = WaveGANGenerator(z, lod, train=True, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')
-    
+  
   # Summarize
   G_z_rms = tf.sqrt(tf.reduce_mean(tf.square(G_z[:, :, 0]), axis=1))
   x_rms = tf.sqrt(tf.reduce_mean(tf.square(x[:, :, 0]), axis=1))
@@ -447,11 +449,11 @@ def train(fps, args):
     while True:
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
-        sess.run(D_train_op)
+        sess.run(D_train_op, feed_dict={lod: 0})
 
         # Enforce Lipschitz constraint for WGAN
         if D_clip_weights is not None:
-          sess.run(D_clip_weights)
+          sess.run(D_clip_weights, feed_dict={lod: 0})
 
       # Train generator
       sess.run(G_train_op)
@@ -502,7 +504,7 @@ def infer(args):
 
   # Execute generator
   with tf.variable_scope('G'):
-    G_z, _ = WaveGANGenerator(z, train=False, context_embedding=c, **args.wavegan_g_kwargs)
+    G_z, _ = WaveGANGenerator(z, tf.constant(5, dtype=tf.float32), train=False, context_embedding=c, **args.wavegan_g_kwargs)
     if args.wavegan_genr_pp:
       with tf.variable_scope('pp_filt'):
         G_z = tf.layers.conv1d(G_z, 1, args.wavegan_genr_pp_len, use_bias=False, padding='same')

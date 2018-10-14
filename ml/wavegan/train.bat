@@ -3,6 +3,8 @@ python train_wavegan.py train .\train ^
 --data_first_window ^
 --wavegan_genr_pp ^
 --use_extra_uncond_loss ^
+--wavegan_kernel_len 9 ^
+--wavegan_genr_upsample nn ^
 --train_summary_secs 15
 
 REM --use_extra_uncond_loss ^
