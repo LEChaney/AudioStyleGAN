@@ -79,22 +79,34 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
   Up Block
   '''
   with tf.variable_scope('up_block'):
-    skip_connection = nn_upsample(audio_lod, stride)
+    def skip():
+      with tf.variable_scope('skip'):
+        skip_connection_code = nn_upsample(inputs, stride)
+        skip_connection_code = tf.layers.conv1d(skip_connection_code, filters=filters, kernel_size=1, strides=1, padding='same')
+        skip_connection_audio = nn_upsample(audio_lod, stride)
+        return skip_connection_code, skip_connection_audio
 
-    CONVS_PER_BLOCK = 2
-    output = nn_upsample(inputs, stride)
-    for i in range(CONVS_PER_BLOCK):
-      with tf.variable_scope('conv_{}'.format(i)):
-        output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
-        if is_gated:
-          gate = tf.sigmoid(tf.layers.conv1d(output, filters, kernel_size, strides=1, padding='same'))
-          output = gate * output
-    
-    audio_lod = to_audio(output)
-    audio_lod = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: lerp_clip(skip_connection, audio_lod, on_amount))
+    def transition():
+      with tf.variable_scope('transition'):
+        code = nn_upsample(inputs, stride)
+        skip_connection_audio = nn_upsample(audio_lod, stride)
+        CONVS_PER_BLOCK = 2
+        for i in range(CONVS_PER_BLOCK):
+          with tf.variable_scope('conv_{}'.format(i)):
+            code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same'))
+            if is_gated:
+              gate = tf.sigmoid(tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same'))
+              code = gate * code
+      
+        audio_lod_ = to_audio(code)
+        audio_lod_ = lerp_clip(skip_connection_audio, audio_lod_, on_amount)
+        return code, audio_lod_
+
+    code, audio_lod = tf.cond(on_amount < 0.0001, skip, transition)
+    code.set_shape([inputs.shape[0], inputs.shape[1] * stride, filters])
     audio_lod.set_shape([inputs.shape[0], inputs.shape[1] * stride, 1])
 
-    return output, audio_lod
+    return code, audio_lod
 
 
 def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu):
@@ -103,17 +115,26 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
   '''
   with tf.variable_scope('down_block'):
     audio_lod = avg_downsample(audio_lod, stride)
-    skip_connection = from_audio(audio_lod, filters)
+    def skip():
+      with tf.variable_scope('skip'):
+        skip_connection_code = from_audio(audio_lod, filters)
+        return skip_connection_code
 
-    with tf.variable_scope('conv_1'):
-      output = activation(tf.layers.conv1d(inputs, filters // 2, kernel_size, strides=1, padding='same'))
-    with tf.variable_scope('conv_2'):
-      output = activation(tf.layers.conv1d(output, filters, kernel_size, strides=stride, padding='same'))
+    def transition():
+      with tf.variable_scope('transition'):
+        skip_connection_code = from_audio(audio_lod, filters)
 
-    output = tf.cond(on_amount < 0.0001, lambda: skip_connection, lambda: lerp_clip(skip_connection, output, on_amount))
-    output.set_shape([inputs.shape[0], inputs.shape[1] // stride, filters])
+        with tf.variable_scope('conv_1'):
+          code = activation(tf.layers.conv1d(inputs, filters // 2, kernel_size, strides=1, padding='same'))
+        with tf.variable_scope('conv_2'):
+          code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same'))
 
-    return output, audio_lod
+        return lerp_clip(skip_connection_code, code, on_amount)
+      
+    code = tf.cond(on_amount < 0.0001, skip, transition)
+    code.set_shape([inputs.shape[0], inputs.shape[1] // stride, filters])
+
+    return code, audio_lod
 
 
 def residual_unit(    
