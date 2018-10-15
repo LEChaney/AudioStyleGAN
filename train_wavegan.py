@@ -454,7 +454,7 @@ def train(fps, args):
     _lod = 0
     while True:
       # Calculate LOD
-      step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod})
+      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
       _lod = np.piecewise(step, [step < 2000, step >= 2000 and step < 3000,
                                  step >= 3000  and step < 5000,  step >= 5000  and step < 6000,
                                  step >= 6000  and step < 8000,  step >= 8000  and step < 9000,
