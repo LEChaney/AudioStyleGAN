@@ -101,7 +101,7 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
         audio_lod_ = lerp_clip(skip_connection_audio, audio_lod_, on_amount)
         return code, audio_lod_
 
-    code, audio_lod = tf.cond(on_amount < 0.0001, skip, transition)
+    code, audio_lod = tf.cond(on_amount <= 0.0, skip, transition)
     code.set_shape([inputs.shape[0], inputs.shape[1] * stride, filters])
     audio_lod.set_shape([inputs.shape[0], inputs.shape[1] * stride, 1])
 
@@ -134,7 +134,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
 
         return lerp_clip(skip_connection_code, code, on_amount)
       
-    code = tf.cond(on_amount < 0.0001, skip, transition)
+    code = tf.cond(on_amount <= 0.0, skip, transition)
     code.set_shape([inputs.shape[0], inputs.shape[1] // stride, filters])
 
     return code, audio_lod
