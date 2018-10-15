@@ -274,7 +274,7 @@ def sample_context_embeddings(embedding, embed_size, train=False):
 
 
 def minibatch_stddev_layer(x, group_size=4):
-  with tf.variable_scope('MinibatchStddev'):
+  with tf.variable_scope('minibatch_stddev'):
     group_size = tf.minimum(group_size, tf.shape(x)[0])     # Minibatch must be divisible by (or smaller than) group_size.
     s = x.shape                                             # [NWC]  Input shape.
     y = tf.reshape(x, [group_size, -1, s[1], s[2]])         # [GMWC] Split minibatch into G groups of size M.
@@ -450,18 +450,14 @@ def encode_audio_stage_2(x,
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=lod-1)
       tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 4), max_outputs=10)
 
+    # Add minibatch standard deviation statistics layer
+    output = minibatch_stddev_layer(output)
+
     # Layer 4
     # [64, 512] -> [16, 1024]
     with tf.variable_scope('downconv_4'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, on_amount=lod-0)
       tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 5), max_outputs=10)
-
-    # Add explicit statistics
-    # output = minibatch_stddev_layer(output)
-    # with tf.variable_scope('stats_blend'):
-    #   output = tf.layers.conv1d(output, dim * 16, kernel_len, 1, padding='SAME')
-    #   output = batchnorm(output)
-    # output = lrelu(output)
 
       # Flatten
     # [16, 1024] -> [16384]
