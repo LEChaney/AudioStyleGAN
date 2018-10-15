@@ -339,27 +339,37 @@ def WaveGANGenerator(
   # Layer 1
   # [16, 1024] -> [64, 512]
   with tf.variable_scope('upconv_1'):
-    x_code, audio_lod = up_block(x_code, audio_lod=to_audio(x_code), filters=dim * 8, kernel_size=kernel_len, on_amount=lod-0)
+    on_amount = lod-0
+    x_code, audio_lod = up_block(x_code, audio_lod=to_audio(x_code), filters=dim * 8, kernel_size=kernel_len, on_amount=on_amount)
+    tf.summary.scalar('on_amount', on_amount)
 
   # Layer 2
   # [64, 512] -> [256, 256]
   with tf.variable_scope('upconv_2'):
-    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=lod-1)
+    on_amount = lod-1
+    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=on_amount)
+    tf.summary.scalar('on_amount', on_amount)
 
   # Layer 3
   # [256, 256] -> [1024, 128]
   with tf.variable_scope('upconv_3'):
-    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=lod-2)
+    on_amount = lod-2
+    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=on_amount)
+    tf.summary.scalar('on_amount', on_amount)
 
   # Layer 3
   # [1024, 128] -> [4096, 64]
   with tf.variable_scope('upconv_4'):
-    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, on_amount=lod-3)
+    on_amount = lod-3
+    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, on_amount=on_amount)
+    tf.summary.scalar('on_amount', on_amount)
 
   # Layer 4
   # [4096, 64] -> [16384, 1]
   with tf.variable_scope('upconv_5'):
-    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=1, kernel_size=kernel_len, on_amount=lod-4)
+    on_amount = lod-4
+    x_code, audio_lod = up_block(x_code, audio_lod=audio_lod, filters=1, kernel_size=kernel_len, on_amount=on_amount)
+    tf.summary.scalar('on_amount', on_amount)
 
   # Automatically update batchnorm moving averages every time G is used during training
   if train and use_batchnorm:
@@ -410,14 +420,19 @@ def encode_audio_stage_1(x,
     tf.summary.audio('input_audio', x, 16000, max_outputs=1)
     output = x
     with tf.variable_scope('downconv_0'):
-      output, audio_lod = down_block(output, audio_lod=x, filters=dim, kernel_size=kernel_len, on_amount=lod-4)
+      on_amount = lod-4
+      output, audio_lod = down_block(output, audio_lod=x, filters=dim, kernel_size=kernel_len, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(audio_lod), 16000, max_outputs=1)
+      tf.summary.scalar('on_amount', on_amount)
+      
 
     # Layer 1
     # [4096, 64] -> [1024, 128]
     with tf.variable_scope('downconv_1'):
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=lod-3)
+      on_amount = lod-3
+      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=1)
+      tf.summary.scalar('on_amount', on_amount)
 
     return output, audio_lod
 
@@ -445,20 +460,26 @@ def encode_audio_stage_2(x,
     # [1024, 128] -> [256, 256]
     output = x
     with tf.variable_scope('downconv_2'):
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=lod-2)
+      on_amount = lod-2
+      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=1)
+      tf.summary.scalar('on_amount', on_amount)
 
     # Layer 3
     # [256, 256] -> [64, 512]
     with tf.variable_scope('downconv_3'):
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=lod-1)
+      on_amount = lod-1
+      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=1)
+      tf.summary.scalar('on_amount', on_amount)
 
     # Layer 4
     # [64, 512] -> [16, 1024]
     with tf.variable_scope('downconv_4'):
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, use_minibatch_stddev=True, on_amount=lod-0)
+      on_amount = lod-0
+      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, use_minibatch_stddev=True, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=1)
+      tf.summary.scalar('on_amount', on_amount)
 
       # Flatten
     # [16, 1024] -> [16384]
