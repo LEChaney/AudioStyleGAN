@@ -469,7 +469,7 @@ def train(fps, args):
       lod_summary = tf.Summary(value=[
           tf.Summary.Value(tag="current_lod", simple_value=float(_lod)), 
       ])
-      summary_writer.add_summary(lod_summary)
+      summary_writer.add_summary(lod_summary, step)
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
