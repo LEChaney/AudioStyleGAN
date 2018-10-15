@@ -407,17 +407,17 @@ def encode_audio_stage_1(x,
   with tf.variable_scope('audio_encode_stage_1'):
     # Layer 0
     # [16384, 1] -> [4096, 64]
-    tf.summary.audio('input_audio', x, 16000, max_outputs=10)
+    tf.summary.audio('input_audio', x, 16000, max_outputs=1)
     output = x
     with tf.variable_scope('downconv_0'):
       output, audio_lod = down_block(output, audio_lod=x, filters=dim, kernel_size=kernel_len, on_amount=lod-4)
-      tf.summary.audio('audio_downsample', audio_lod, 16000 / 4, max_outputs=10)
+      tf.summary.audio('audio_downsample', audio_lod, 4000, max_outputs=1)
 
     # Layer 1
     # [4096, 64] -> [1024, 128]
     with tf.variable_scope('downconv_1'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=lod-3)
-      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 2), max_outputs=10)
+      tf.summary.audio('audio_downsample', audio_lod, 1000, max_outputs=1)
 
     return output, audio_lod
 
@@ -446,19 +446,19 @@ def encode_audio_stage_2(x,
     output = x
     with tf.variable_scope('downconv_2'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=lod-2)
-      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 3), max_outputs=10)
+      tf.summary.audio('audio_downsample', audio_lod, 250, max_outputs=1)
 
     # Layer 3
     # [256, 256] -> [64, 512]
     with tf.variable_scope('downconv_3'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=lod-1)
-      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 4), max_outputs=10)
+      tf.summary.audio('audio_downsample', audio_lod, 62.5, max_outputs=1)
 
     # Layer 4
     # [64, 512] -> [16, 1024]
     with tf.variable_scope('downconv_4'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, use_minibatch_stddev=True, on_amount=lod-0)
-      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 5), max_outputs=10)
+      tf.summary.audio('audio_downsample', audio_lod, 15.625, max_outputs=1)
 
       # Flatten
     # [16, 1024] -> [16384]
