@@ -128,7 +128,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
           code = minibatch_stddev_layer(code)
 
         with tf.variable_scope('conv_1'):
-          code = activation(tf.layers.conv1d(code, tf.shape(inputs)[2], kernel_size, strides=1, padding='same'))
+          code = activation(tf.layers.conv1d(code, inputs.get_shape().as_list()[2], kernel_size, strides=1, padding='same'))
         with tf.variable_scope('conv_2'):
           code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same'))
 
