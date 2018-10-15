@@ -81,9 +81,8 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
   with tf.variable_scope('up_block'):
     def skip():
       with tf.variable_scope('skip'):
-        skip_connection_code = nn_upsample(inputs, stride)
-        skip_connection_code = tf.layers.conv1d(skip_connection_code, filters=filters, kernel_size=1, strides=1, padding='same')
         skip_connection_audio = nn_upsample(audio_lod, stride)
+        skip_connection_code = tf.zeros([tf.shape(inputs)[0], tf.shape(inputs)[1] * stride, filters], dtype=tf.float32)
         return skip_connection_code, skip_connection_audio
 
     def transition():
@@ -404,14 +403,17 @@ def encode_audio_stage_1(x,
   with tf.variable_scope('audio_encode_stage_1'):
     # Layer 0
     # [16384, 1] -> [4096, 64]
+    tf.summary.audio('input_audio', x, 16000, max_outputs=10)
     output = x
     with tf.variable_scope('downconv_0'):
       output, audio_lod = down_block(output, audio_lod=x, filters=dim, kernel_size=kernel_len, on_amount=lod-4)
+      tf.summary.audio('audio_downsample', audio_lod, 16000 / 4, max_outputs=10)
 
     # Layer 1
     # [4096, 64] -> [1024, 128]
     with tf.variable_scope('downconv_1'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=lod-3)
+      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 2), max_outputs=10)
 
     return output, audio_lod
 
@@ -440,16 +442,19 @@ def encode_audio_stage_2(x,
     output = x
     with tf.variable_scope('downconv_2'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=lod-2)
+      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 3), max_outputs=10)
 
     # Layer 3
     # [256, 256] -> [64, 512]
     with tf.variable_scope('downconv_3'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=lod-1)
+      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 4), max_outputs=10)
 
     # Layer 4
     # [64, 512] -> [16, 1024]
     with tf.variable_scope('downconv_4'):
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, on_amount=lod-0)
+      tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 5), max_outputs=10)
 
     # Add explicit statistics
     # output = minibatch_stddev_layer(output)

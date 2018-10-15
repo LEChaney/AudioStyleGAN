@@ -440,6 +440,9 @@ def train(fps, args):
   #       sess.run(D_clip_weights)
   # print('Discriminator Warmup Complete!')
 
+  def smoothstep(x, mi, mx):
+    return mi + (mx-mi)*(lambda t: np.where(t < 0 , 0, np.where( t <= 1 , 3*t**2-2*t**3, 1 ) ) )( x )
+
   # Run training
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=args.train_dir,
@@ -448,17 +451,27 @@ def train(fps, args):
     #summary_writer = SummaryWriterCache.get(args.train_dir)
     while True:
       step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: 0})
+      _lod = np.piecewise(step, [step < 2000, step >= 2000 and step < 3000,
+                                 step >= 3000  and step < 5000,  step >= 5000  and step < 6000,
+                                 step >= 6000  and step < 8000,  step >= 8000  and step < 9000,
+                                 step >= 9000  and step < 11000, step >= 11000 and step < 12000,
+                                 step >= 12000 and step < 14000, step >= 14000],
+                                [0, lambda x: smoothstep((x - 2000) / 1000, 0, 1),
+                                 1, lambda x: smoothstep((x - 5000) / 1000, 1, 2),
+                                 2, lambda x: smoothstep((x - 8000) / 1000, 2, 3),
+                                 3, lambda x: smoothstep((x - 11000) / 1000, 3, 4),
+                                 4, lambda x: smoothstep((x - 14000) / 1000, 4, 5)])
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
-        sess.run(D_train_op, feed_dict={lod: step / 2000})
+        sess.run(D_train_op, feed_dict={lod: _lod})
 
         # Enforce Lipschitz constraint for WGAN
         if D_clip_weights is not None:
-          sess.run(D_clip_weights, feed_dict={lod: step / 2000})
+          sess.run(D_clip_weights, feed_dict={lod: _lod})
 
       # Train generator
-      sess.run(G_train_op, feed_dict={lod: step / 2000})
+      sess.run(G_train_op, feed_dict={lod: _lod})
 
 
 """
