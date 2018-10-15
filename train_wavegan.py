@@ -448,8 +448,11 @@ def train(fps, args):
       checkpoint_dir=args.train_dir,
       save_checkpoint_secs=args.train_save_secs,
       save_summaries_secs=args.train_summary_secs) as sess:
-    #summary_writer = SummaryWriterCache.get(args.train_dir)
+    # Get the summary writer for writing extra summary statistics
+    summary_writer = SummaryWriterCache.get(args.train_dir)
+
     while True:
+      # Calculate LOD
       step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: 0})
       _lod = np.piecewise(step, [step < 2000, step >= 2000 and step < 3000,
                                  step >= 3000  and step < 5000,  step >= 5000  and step < 6000,
@@ -461,6 +464,12 @@ def train(fps, args):
                                  2, lambda x: smoothstep((x - 8000) / 1000, 2, 3),
                                  3, lambda x: smoothstep((x - 11000) / 1000, 3, 4),
                                  4, lambda x: smoothstep((x - 14000) / 1000, 4, 5)])
+
+      # Output current LOD for testing
+      lod_summary = tf.Summary(value=[
+          tf.Summary.Value(tag="current_lod", simple_value=float(_lod)), 
+      ])
+      summary_writer.add_summary(lod_summary)
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
