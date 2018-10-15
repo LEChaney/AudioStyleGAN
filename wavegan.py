@@ -477,7 +477,7 @@ def encode_audio_stage_2(x,
     # [64, 512] -> [16, 1024]
     with tf.variable_scope('downconv_4'):
       on_amount = lod-0
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, use_minibatch_stddev=True, on_amount=on_amount)
+      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, use_minibatch_stddev=False, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=1)
       tf.summary.scalar('on_amount', on_amount)
 
