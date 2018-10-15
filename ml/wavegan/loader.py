@@ -86,7 +86,7 @@ def get_batch(
 
       # Runtime Data Augmentation
       wav = tf.py_func(pitch_speed_aug, [wav], tf.float32)
-      wav *= tf.random_uniform([1], minval=0.5, maxval=1.1) # Change dynamic range
+      # wav *= tf.random_uniform([1], minval=0.5, maxval=1.1) # Change dynamic range
 
       wav = tf.reshape(wav, [-1, 1], name='real_audio')
       wav.set_shape([window_len, 1])
