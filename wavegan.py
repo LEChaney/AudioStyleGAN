@@ -108,7 +108,7 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
     return code, audio_lod
 
 
-def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu):
+def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, use_minibatch_stddev=False):
   '''
   Down Block
   '''
@@ -123,8 +123,12 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
       with tf.variable_scope('transition'):
         skip_connection_code = from_audio(audio_lod, filters)
 
+        code = inputs
+        if use_minibatch_stddev:
+          code = minibatch_stddev_layer(code)
+
         with tf.variable_scope('conv_1'):
-          code = activation(tf.layers.conv1d(inputs, filters // 2, kernel_size, strides=1, padding='same'))
+          code = activation(tf.layers.conv1d(code, tf.shape(inputs)[2], kernel_size, strides=1, padding='same'))
         with tf.variable_scope('conv_2'):
           code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same'))
 
@@ -450,13 +454,10 @@ def encode_audio_stage_2(x,
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=lod-1)
       tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 4), max_outputs=10)
 
-    # Add minibatch standard deviation statistics layer
-    output = minibatch_stddev_layer(output)
-
     # Layer 4
     # [64, 512] -> [16, 1024]
     with tf.variable_scope('downconv_4'):
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, on_amount=lod-0)
+      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, use_minibatch_stddev=True, on_amount=lod-0)
       tf.summary.audio('audio_downsample', audio_lod, 16000 / (4 ** 5), max_outputs=10)
 
       # Flatten
