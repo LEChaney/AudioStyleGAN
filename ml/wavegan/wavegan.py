@@ -61,7 +61,7 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
         # Shortcut
         with tf.variable_scope('shortcut'):
           shortcut = nn_upsample(inputs, stride)
-          if shortcut.get_shape().aslist()[2] != filters:
+          if shortcut.get_shape().as_list()[2] != filters:
             shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
         code = inputs
@@ -110,9 +110,9 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
         # Shortcut
         with tf.variable_scope('shortcut'):
           shortcut = avg_downsample(inputs, stride)
-          if shortcut.get_shape().aslist()[2] != filters and use_minibatch_stddev:
+          if shortcut.get_shape().as_list()[2] != filters and use_minibatch_stddev:
             shortcut = tf.layers.conv1d(shortcut, filters + 1, kernel_size=1, strides=1, padding='same')
-          elif shortcut.get_shape().aslist()[2] != filters:
+          elif shortcut.get_shape().as_list()[2] != filters:
             shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
         code = inputs
@@ -147,7 +147,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
 def residual_block(inputs, filters, kernel_size=9, stride=1, padding='same', activation=lrelu):
   with tf.variable_scope('residual_block'):
     shortcut = inputs
-    if shortcut.get_shape().aslist()[2] != filters:
+    if shortcut.get_shape().as_list()[2] != filters:
       shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
     code = inputs
