@@ -416,11 +416,11 @@ def train(fps, args):
   elif args.wavegan_loss == 'wgan-gp':
     G_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.5,
+        beta1=0.0,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.5,
+        beta1=0.0,
         beta2=0.9)
   else:
     raise NotImplementedError()
