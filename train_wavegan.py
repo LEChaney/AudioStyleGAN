@@ -465,16 +465,16 @@ def train(fps, args):
     while True:
       # Calculate LOD
       step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
-      _lod = np.piecewise(step, [step < 5000, step >= 5000 and step < 10000,
-                                 step >= 10000 and step < 15000, step >= 15000 and step < 20000,
-                                 step >= 20000 and step < 25000, step >= 25000 and step < 30000,
-                                 step >= 30000 and step < 35000, step >= 35000 and step < 40000,
-                                 step >= 40000 and step < 45000, step >= 45000],
-                                [0, lambda x: smoothstep((x - 5000)  / 5000, 0, 1),
-                                 1, lambda x: smoothstep((x - 15000) / 5000, 1, 2),
-                                 2, lambda x: smoothstep((x - 25000) / 5000, 2, 3),
-                                 3, lambda x: smoothstep((x - 35000) / 5000, 3, 4),
-                                 4, lambda x: smoothstep((x - 45000) / 5000, 4, 5)])
+      _lod = np.piecewise(step, [step < 10000, step >= 10000 and step < 20000,
+                                 step >= 20000 and step < 30000, step >= 30000 and step < 40000,
+                                 step >= 40000 and step < 50000, step >= 50000 and step < 60000,
+                                 step >= 60000 and step < 70000, step >= 70000 and step < 80000,
+                                 step >= 80000 and step < 90000, step >= 90000],
+                                [0, lambda x: smoothstep((x - 10000) / 10000, 0, 1),
+                                 1, lambda x: smoothstep((x - 30000) / 10000, 1, 2),
+                                 2, lambda x: smoothstep((x - 50000) / 10000, 2, 3),
+                                 3, lambda x: smoothstep((x - 70000) / 10000, 3, 4),
+                                 4, lambda x: smoothstep((x - 90000) / 10000, 4, 5)])
 
       # Output current LOD for testing
       lod_summary = tf.Summary(value=[
