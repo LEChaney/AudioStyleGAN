@@ -90,13 +90,26 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
         code = nn_upsample(inputs, stride)
         skip_connection_audio = nn_upsample(audio_lod, stride)
         CONVS_PER_BLOCK = 2
+
+        # Shortcut
+        with tf.variable_scope('shortcut'):
+          if code.get_shape().aslist()[2] == filters:
+            shortcut = code
+          else:
+            shortcut = tf.layers.conv1d(code, filters, kernel_size=1, strides=1, padding='same')
+
+        # Convolution layers
         for i in range(CONVS_PER_BLOCK):
           with tf.variable_scope('conv_{}'.format(i)):
             code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same'))
             if is_gated:
               gate = tf.sigmoid(tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same'))
               code = gate * code
+        
+        # Add shortcut connection
+        code = shortcut + code
       
+        # Blend this LOD block in over time
         audio_lod_ = to_audio(code)
         audio_lod_ = lerp_clip(skip_connection_audio, audio_lod_, on_amount)
         return code, audio_lod_
@@ -121,17 +134,29 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
 
     def transition():
       with tf.variable_scope('transition'):
+        code = inputs
         skip_connection_code = from_audio(audio_lod, filters)
 
-        code = inputs
+        # Shortcut
+        with tf.variable_scope('shortcut'):
+          shortcut = avg_downsample(code)
+          if code.get_shape().aslist()[2] != filters:
+            shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
+
+        # Minibatch std deviation
         if use_minibatch_stddev:
           code = minibatch_stddev_layer(code)
 
+         # Convolution layers
         with tf.variable_scope('conv_1'):
           code = activation(tf.layers.conv1d(code, inputs.get_shape().as_list()[2], kernel_size, strides=1, padding='same'))
         with tf.variable_scope('conv_2'):
           code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same'))
 
+        # Add shortcut connection
+        code = shortcut + code
+
+        # Blend this LOD block in over time
         return lerp_clip(skip_connection_code, code, on_amount)
       
     code = tf.cond(on_amount <= 0.0, skip, transition)
