@@ -12,7 +12,7 @@ from six.moves import xrange
 
 from history_buffer import HistoryBuffer
 import loader
-from wavegan import WaveGANGenerator, WaveGANDiscriminator
+from wavegan import WaveGANGenerator, WaveGANDiscriminator, avg_downsample
 from functools import reduce
 
 
@@ -58,6 +58,11 @@ def train(fps, args):
   tf.summary.histogram('x_rms_batch', x_rms)
   tf.summary.histogram('G_z_rms_batch', G_z_rms)
   tf.summary.scalar('x_rms', tf.reduce_mean(x_rms))
+  tf.summary.scalar('x_rms_lod_4', tf.reduce_mean(avg_downsample(x_rms)))
+  tf.summary.scalar('x_rms_lod_3', tf.reduce_mean(avg_downsample(avg_downsample(x_rms))))
+  tf.summary.scalar('x_rms_lod_2', tf.reduce_mean(avg_downsample(avg_downsample(avg_downsample(x_rms)))))
+  tf.summary.scalar('x_rms_lod_1', tf.reduce_mean(avg_downsample(avg_downsample(avg_downsample(avg_downsample(x_rms))))))
+  tf.summary.scalar('x_rms_lod_0', tf.reduce_mean(avg_downsample(avg_downsample(avg_downsample(avg_downsample(avg_downsample(x_rms)))))))
   tf.summary.scalar('G_z_rms', tf.reduce_mean(G_z_rms))
   tf.summary.audio('x', x, _FS, max_outputs=10)
   tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
