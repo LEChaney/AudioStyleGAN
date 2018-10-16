@@ -10,15 +10,17 @@ def nn_upsample(inputs, stride=4):
   Upsamples an audio clip using nearest neighbor upsampling.
   Output is of size 'audio clip length' x 'stride'
   '''
-  w = tf.shape(inputs)[1]
-  output = tf.expand_dims(inputs, axis=1)
-  output = tf.image.resize_nearest_neighbor(output, [1, w * stride])
-  output = output[:, 0]
-  return output
+  with tf.variable_scope('upsample'):
+    w = tf.shape(inputs)[1]
+    output = tf.expand_dims(inputs, axis=1)
+    output = tf.image.resize_nearest_neighbor(output, [1, w * stride])
+    output = output[:, 0]
+    return output
 
 
 def avg_downsample(inputs, stride=4):
-  return tf.layers.average_pooling1d(inputs, pool_size=stride, strides=stride, padding='same')
+  with tf.variable_scope('downsample'):
+    return tf.layers.average_pooling1d(inputs, pool_size=stride, strides=stride, padding='same')
 
 
 def custom_conv1d(
@@ -74,7 +76,7 @@ def from_audio(inputs, out_feature_maps):
     return tf.layers.conv1d(inputs, filters=out_feature_maps, kernel_size=1, strides=1, padding='same')
 
 
-def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=tf.nn.tanh, is_gated=True):
+def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu):
   '''
   Up Block
   '''
@@ -87,24 +89,26 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
 
     def transition():
       with tf.variable_scope('transition'):
-        code = nn_upsample(inputs, stride)
         skip_connection_audio = nn_upsample(audio_lod, stride)
-        CONVS_PER_BLOCK = 2
 
         # Shortcut
         with tf.variable_scope('shortcut'):
-          if code.get_shape().aslist()[2] == filters:
-            shortcut = code
-          else:
-            shortcut = tf.layers.conv1d(code, filters, kernel_size=1, strides=1, padding='same')
+          shortcut = nn_upsample(inputs, stride)
+          if shortcut.get_shape().aslist()[2] != filters:
+            shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
+
+        code = inputs
 
         # Convolution layers
-        for i in range(CONVS_PER_BLOCK):
-          with tf.variable_scope('conv_{}'.format(i)):
-            code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same'))
-            if is_gated:
-              gate = tf.sigmoid(tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same'))
-              code = gate * code
+        # <-- TODO: Normalization goes here 
+        with tf.variable_scope('conv_0'):
+          code = activation(inputs) # Pre-Activation
+          code = nn_upsample(code, stride) # Upsample
+          code = tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same')
+        with tf.variable_scope('conv_1'):
+          # <-- TODO: Normalization goes here 
+          code = activation(code)  # Pre-Activation
+          code = tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same')
         
         # Add shortcut connection
         code = shortcut + code
@@ -134,24 +138,32 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
 
     def transition():
       with tf.variable_scope('transition'):
-        code = inputs
         skip_connection_code = from_audio(audio_lod, filters)
 
         # Shortcut
         with tf.variable_scope('shortcut'):
-          shortcut = avg_downsample(code)
-          if code.get_shape().aslist()[2] != filters:
+          shortcut = avg_downsample(inputs, stride)
+          if shortcut.get_shape().aslist()[2] != filters and use_minibatch_stddev:
+            shortcut = tf.layers.conv1d(shortcut, filters + 1, kernel_size=1, strides=1, padding='same')
+          elif shortcut.get_shape().aslist()[2] != filters:
             shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
-        # Minibatch std deviation
-        if use_minibatch_stddev:
-          code = minibatch_stddev_layer(code)
+        code = inputs
 
          # Convolution layers
+        with tf.variable_scope('conv_0'):
+           # <-- TODO: Normalization goes here 
+          code = activation(code)  # Pre-Activation
+          
+          # Minibatch std deviation
+          if use_minibatch_stddev:
+            code = minibatch_stddev_layer(code)
+
+          code = tf.layers.conv1d(code, inputs.get_shape().as_list()[2], kernel_size, strides=1, padding='same')
         with tf.variable_scope('conv_1'):
-          code = activation(tf.layers.conv1d(code, inputs.get_shape().as_list()[2], kernel_size, strides=1, padding='same'))
-        with tf.variable_scope('conv_2'):
-          code = activation(tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same'))
+          # <-- TODO: Normalization goes here 
+          code = activation(code)  # Pre-Activation
+          code = tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same')
 
         # Add shortcut connection
         code = shortcut + code
