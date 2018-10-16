@@ -23,39 +23,6 @@ def avg_downsample(inputs, stride=4):
     return tf.layers.average_pooling1d(inputs, pool_size=stride, strides=stride, padding='same')
 
 
-def custom_conv1d(
-    inputs,
-    filters,
-    kernel_width,
-    stride=4,
-    padding='same',
-    upsample=None):
-  if upsample == 'zeros':
-    return tf.layers.conv2d_transpose(
-        tf.expand_dims(inputs, axis=1),
-        filters,
-        (1, kernel_width),
-        strides=(1, stride),
-        padding='same'
-        )[:, 0]
-  elif upsample == 'nn':
-    x = nn_upsample(inputs, stride)
-
-    return tf.layers.conv1d(
-        x,
-        filters,
-        kernel_width,
-        1,
-        padding='same')
-  else:
-    return tf.layers.conv1d(
-        inputs, 
-        filters, 
-        kernel_width, 
-        strides=stride, 
-        padding='same')
-
-
 def lrelu(inputs, alpha=0.2):
   return tf.maximum(alpha * inputs, inputs)
   
@@ -177,80 +144,28 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
     return code, audio_lod
 
 
-def residual_unit(    
-    inputs,
-    filters,
-    kernel_width=24,
-    stride=1,
-    padding='same',
-    upsample=None,
-    activation=tf.nn.tanh,
-    is_gated=True):
-  # Shortcut connection
-  if (upsample is not None) or (inputs.shape[-1] != filters) or (stride != 1):
-    shortcut = custom_conv1d(inputs, filters, 1, stride, padding, upsample)
-  else:
+def residual_block(inputs, filters, kernel_size=9, stride=1, padding='same', activation=lrelu):
+  with tf.variable_scope('residual_block'):
     shortcut = inputs
+    if shortcut.get_shape().aslist()[2] != filters:
+      shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
-  # Up-Conv + Gated Activation
-  z1 = custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample)
-  output = activation(z1)
-  if is_gated:
-    z2 = custom_conv1d(inputs, filters, kernel_width, stride, padding, upsample)
-    gate = tf.sigmoid(z2)
-    output = gate * output
+    code = inputs
 
-  return output + shortcut
+    # Convolution layers
+    with tf.variable_scope('conv_0'):
+      # <-- TODO: Normalization goes here 
+      code = activation(code)  # Pre-Activation
+      code = tf.layers.conv1d(code, inputs.get_shape().as_list()[2], kernel_size, strides=1, padding='same')
+    with tf.variable_scope('conv_1'):
+      # <-- TODO: Normalization goes here 
+      code = activation(code)  # Pre-Activation
+      code = tf.layers.conv1d(code, filters, kernel_size, strides=stride, padding='same')
 
+    # Add shortcut connection
+    code = shortcut + code
 
-def dense_block(
-    inputs,
-    num_units,
-    filters_per_unit=32,
-    kernel_width=24,
-    out_dim=None,
-    activation=tf.tanh,
-    batchnorm_fn=lambda x: x):
-  """
-  input: Input tensor
-  num_units: Number of internal convolution units in the dense block
-  batchnorm_fn: A function for normalizing each layer
-  filters_per_unit: The number of filters produced by each unit, these are stacked together
-  so the final output filters will be num_units * filters_per_unit + input filters
-  out_dim: Settings this will override the output dimension using 1 by 1 convolution at end of block
-  kernel_width: The size of the kernel used by each convolutional unit
-  """
-  output = inputs
-  for i in range(num_units):
-    with tf.variable_scope("unit_{}".format(i)):
-      bn = batchnorm_fn(output) if i != 0 else output
-      unit_out = residual_unit(bn, filters_per_unit, kernel_width, activation=activation)
-      output = tf.concat([output, unit_out], 2)
-
-  # Resize out dimensions on request
-  if out_dim is not None:
-    with tf.variable_scope("1_by_1"):
-      return residual_unit(output, out_dim, 1, activation=activation)
-  else:
-    return output
-
-
-def inception_block(inputs, filters_internal=64, kernel_width=24):
-  shortcut = inputs
-
-  filter1 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
-  filter1 = tf.layers.conv1d(filter1, filters_internal, kernel_width // 4, padding="SAME")
-
-  filter2 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
-  filter2 = tf.layers.conv1d(filter2, filters_internal, kernel_width // 2, padding="SAME")
-
-  filter3 = tf.layers.conv1d(inputs, filters_internal, 1, padding="SAME")
-  filter3 = tf.layers.conv1d(filter3, filters_internal, kernel_width, padding="SAME")
-
-  concat = tf.concat([filter1, filter2, filter3], 2)
-  output = tf.layers.conv1d(concat, inputs.shape[-1], 1, padding="SAME")
-
-  return shortcut + output
+    return code
 
 
 def compress_embedding(embedding, embed_size):
@@ -364,14 +279,9 @@ def WaveGANGenerator(
   with tf.variable_scope('z_project'):
     x_code = tf.layers.dense(x_code, 4 * 4 * dim * 16)
     x_code = tf.reshape(x_code, [batch_size, 16, dim * 16])
-    x_code = tf.nn.relu(x_code)
-    # x_code = batchnorm(x_code)
 
   with tf.variable_scope('layer_0'):
-    x_code = residual_unit(x_code, filters=dim * 16, kernel_width=kernel_len)
-    x_code = batchnorm(x_code)
-    x_code = residual_unit(x_code, filters=dim * 16, kernel_width=kernel_len)
-    x_code = batchnorm(x_code)
+    x_code = residual_block(x_code, filters=dim * 16, kernel_size=kernel_len)
 
   # Layer 1
   # [16, 1024] -> [64, 512]
@@ -549,6 +459,8 @@ def WaveGANDiscriminator(
   if (context_embedding is not None):
     with tf.variable_scope('conditional'):
       cond_out, _ = encode_audio_stage_2(stage_1, audio_lod_stage_1, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+      # < -- TODO: Normalization here
+      cond_out = lrelu(cond_out)
 
       # Concat context embeddings
       # [16384] -> [16384 + embedding_dim]
