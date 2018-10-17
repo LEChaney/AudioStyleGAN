@@ -431,6 +431,10 @@ def train(fps, args):
       global_step=tf.train.get_or_create_global_step())
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
 
+  # Variables for smoothly interpolating between LOD levels
+  steps_at_max_lod_var = tf.get_variable('steps_at_max_lod', shape=[], dtype=tf.int32, trainable=False)
+  steps_at_max_lod_incr_op = steps_at_max_lod_var.assign(steps_at_max_lod_var + 1)
+
   def smoothstep(x, mi, mx):
     return mi + (mx-mi)*(lambda t: np.where(t < 0 , 0, np.where( t <= 1 , 3*t**2-2*t**3, 1 ) ) )( x )
 
@@ -443,9 +447,9 @@ def train(fps, args):
     summary_writer = SummaryWriterCache.get(args.train_dir)
 
     _lod = 0
-    steps_at_max_lod = 0 # The number of steps that we have trained at the maximum lod level
     while True:
       # Calculate Maximum LOD to train
+      step, steps_at_max_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_max_lod_var], feed_dict={lod: _lod})
       max_lod = np.piecewise(steps_at_max_lod,
                             [         steps_at_max_lod < 1500 ,  1500 <= steps_at_max_lod < 3000,
                               3000 <= steps_at_max_lod < 4500 ,  4500 <= steps_at_max_lod < 6000,
@@ -463,14 +467,18 @@ def train(fps, args):
       _lod = np.random.randint(math.ceil(max_lod) + 1)
       if _lod >= max_lod:
         _lod = max_lod
-        steps_at_max_lod += 1
+        sess.run(steps_at_max_lod_incr_op, feed_dict={lod: _lod})
 
-      # Output current LOD to tensorboard
+      # Output current LOD and 'steps at max LOD' to tensorboard
       step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
       lod_summary = tf.Summary(value=[
-          tf.Summary.Value(tag="current_lod", simple_value=float(max_lod)),
+        tf.Summary.Value(tag="current_lod", simple_value=float(max_lod)),
+      ])
+      steps_at_max_lod_summary = tf.Summary(value=[
+        tf.Summary.Value(tag="steps_at_max_lod", simple_value=float(steps_at_max_lod))
       ])
       summary_writer.add_summary(lod_summary, step)
+      summary_writer.add_summary(steps_at_max_lod_summary, step)
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
