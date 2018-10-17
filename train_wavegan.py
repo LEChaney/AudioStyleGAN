@@ -22,7 +22,7 @@ from functools import reduce
 """
 _FS = 16000
 _WINDOW_LEN = 16384
-_D_Z = 128
+_D_Z = 256
 
 
 """
@@ -864,7 +864,7 @@ if __name__ == '__main__':
     data_dir=None,
     data_first_window=False,
     wavegan_kernel_len=24,
-    wavegan_dim=64,
+    wavegan_dim=16,
     wavegan_batchnorm=False,
     wavegan_disc_nupdates=5,
     wavegan_loss='wgan-gp',
