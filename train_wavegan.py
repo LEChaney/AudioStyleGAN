@@ -450,7 +450,7 @@ def train(fps, args):
     while True:
       # Calculate Maximum LOD to train
       step, steps_at_max_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_max_lod_var], feed_dict={lod: _lod})
-      max_lod = np.piecewise(steps_at_max_lod,
+      max_lod = np.piecewise(float(steps_at_max_lod),
                             [         steps_at_max_lod < 1500 ,  1500 <= steps_at_max_lod < 3000,
                               3000 <= steps_at_max_lod < 4500 ,  4500 <= steps_at_max_lod < 6000,
                               6000 <= steps_at_max_lod < 7500 ,  7500 <= steps_at_max_lod < 9000,
