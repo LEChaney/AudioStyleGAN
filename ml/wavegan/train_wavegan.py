@@ -2,6 +2,7 @@ from __future__ import print_function
 import pickle
 import os
 import time
+import math
 
 import numpy as np
 import tensorflow as tf
@@ -429,26 +430,6 @@ def train(fps, args):
   G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
       global_step=tf.train.get_or_create_global_step())
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
-  # D_warmup_op = D_opt.minimize(D_warmup_loss, var_list=D_vars,
-  #     global_step=tf.train.get_or_create_global_step())
-
-  # # Run disciminator warmup training
-  # num_warmup_steps = 2000
-  # print('Warming Up Discriminator...')
-  # with tf.train.MonitoredTrainingSession(
-  #     checkpoint_dir=args.train_dir,
-  #     save_checkpoint_secs=args.train_save_secs,
-  #     save_summaries_secs=args.train_summary_secs,
-  #     summary_dir=os.path.join(args.train_dir, 'warmup/')) as sess:
-  #   global_step = sess.run(tf.train.get_or_create_global_step())
-  #   for _ in range(max(num_warmup_steps - global_step, 0)):
-  #     # Train discriminator
-  #     sess.run(D_warmup_op)
-
-  #     # Enforce Lipschitz constraint for WGAN
-  #     if D_clip_weights is not None:
-  #       sess.run(D_clip_weights)
-  # print('Discriminator Warmup Complete!')
 
   def smoothstep(x, mi, mx):
     return mi + (mx-mi)*(lambda t: np.where(t < 0 , 0, np.where( t <= 1 , 3*t**2-2*t**3, 1 ) ) )( x )
@@ -462,23 +443,32 @@ def train(fps, args):
     summary_writer = SummaryWriterCache.get(args.train_dir)
 
     _lod = 0
+    steps_at_max_lod = 0 # The number of steps that we have trained at the maximum lod level
     while True:
-      # Calculate LOD
-      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
-      _lod = np.piecewise(step, [step < 10000, step >= 10000 and step < 20000,
-                                 step >= 20000 and step < 30000, step >= 30000 and step < 40000,
-                                 step >= 40000 and step < 50000, step >= 50000 and step < 60000,
-                                 step >= 60000 and step < 70000, step >= 70000 and step < 80000,
-                                 step >= 80000 and step < 90000, step >= 90000],
-                                [0, lambda x: smoothstep((x - 10000) / 10000, 0, 1),
-                                 1, lambda x: smoothstep((x - 30000) / 10000, 1, 2),
-                                 2, lambda x: smoothstep((x - 50000) / 10000, 2, 3),
-                                 3, lambda x: smoothstep((x - 70000) / 10000, 3, 4),
-                                 4, lambda x: smoothstep((x - 90000) / 10000, 4, 5)])
+      # Calculate Maximum LOD to train
+      max_lod = np.piecewise(steps_at_max_lod,
+                            [         steps_at_max_lod < 1500 ,  1500 <= steps_at_max_lod < 3000,
+                              3000 <= steps_at_max_lod < 4500 ,  4500 <= steps_at_max_lod < 6000,
+                              6000 <= steps_at_max_lod < 7500 ,  7500 <= steps_at_max_lod < 9000,
+                              9000 <= steps_at_max_lod < 10500, 10500 <= steps_at_max_lod < 12000,
+                             12000 <= steps_at_max_lod < 13500, 13500 <= steps_at_max_lod < 15000],
+                            [0, lambda x: smoothstep((x - 1500 ) / 1500, 0, 1),
+                             1, lambda x: smoothstep((x - 4500 ) / 1500, 1, 2),
+                             2, lambda x: smoothstep((x - 7500 ) / 1500, 2, 3),
+                             3, lambda x: smoothstep((x - 10500) / 1500, 3, 4),
+                             4, lambda x: smoothstep((x - 13500) / 1500, 4, 5),
+                             5])
+      
+      # Randomly select an LOD to train from all previously trained LOD + the current (possibly blending) LOD
+      _lod = np.random.randint(math.ceil(max_lod) + 1)
+      if _lod >= max_lod:
+        _lod = max_lod
+        steps_at_max_lod += 1
 
-      # Output current LOD for testing
+      # Output current LOD to tensorboard
+      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
       lod_summary = tf.Summary(value=[
-          tf.Summary.Value(tag="current_lod", simple_value=float(_lod)), 
+          tf.Summary.Value(tag="current_lod", simple_value=float(max_lod)),
       ])
       summary_writer.add_summary(lod_summary, step)
 
