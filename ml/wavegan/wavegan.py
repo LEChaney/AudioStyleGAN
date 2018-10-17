@@ -472,8 +472,7 @@ def WaveGANDiscriminator(
     with tf.variable_scope('conditional'):
       cond_out, _ = encode_audio_stage_2(stage_1, audio_lod_stage_1, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
 
-      # Concat context embeddings
-      # [16384] -> [16384 + embedding_dim]
+      # Add conditioning code to hidden state
       c_code = compress_embedding(context_embedding, embedding_dim)
       cond_out = add_conditioning(cond_out, c_code)
       cond_out = residual_block(cond_out, filters=cond_out.get_shape().as_list()[2], kernel_size=kernel_len, stride=1, padding='same')
