@@ -484,8 +484,8 @@ def WaveGANDiscriminator(
   # Flatten
   # [16, 1024] -> [16384]
   batch_size = tf.shape(x)[0]
-  output = tf.reshape(output, [batch_size, dim * 16 * 16])
-  uncond_out = tf.reshape(uncond_out, [batch_size, dim * 16 * 16])
+  output = tf.reshape(output, [batch_size, -1])
+  uncond_out = tf.reshape(uncond_out, [batch_size, -1])
 
   # Connect to single logit
   # [16384] -> [1]
