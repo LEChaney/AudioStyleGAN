@@ -277,7 +277,7 @@ def WaveGANGenerator(
     batchnorm = lambda x: tf.layers.batch_normalization(x, training=train)
     _batchnorm = lambda x: tf.contrib.layers.batch_norm(x, is_training=train, updates_collections=None) # Hacky fix for weird tensorflow bug that only happens when using batchnorm in an up_block
   else:
-    batchnorm = lambda x: x
+    _batchnorm = batchnorm = lambda x: x
 
   if (context_embedding is not None):
     # Reduce or expand context embedding to be size [embedding_dim]
