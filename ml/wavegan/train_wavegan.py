@@ -399,10 +399,10 @@ def train(fps, args):
   # Create (recommended) optimizer
   if args.wavegan_loss == 'dcgan':
     G_opt = tf.train.AdamOptimizer(
-        learning_rate=2e-4,
+        learning_rate=0.0001,
         beta1=0.5)
     D_opt = tf.train.AdamOptimizer(
-        learning_rate=2e-4,
+        learning_rate=0.000005,
         beta1=0.5)
   elif args.wavegan_loss == 'lsgan':
     G_opt = tf.train.RMSPropOptimizer(
