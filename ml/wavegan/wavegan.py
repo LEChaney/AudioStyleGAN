@@ -113,7 +113,7 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
     return code, audio_lod
 
 
-def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, normalization):
+def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, normalization=lambda x: x):
   '''
   Down Block
   '''
@@ -158,7 +158,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
     return code, audio_lod
 
 
-def residual_block(inputs, filters, kernel_size=9, stride=1, padding='same', activation=lrelu):
+def residual_block(inputs, filters, kernel_size=9, stride=1, padding='same', activation=lrelu, normalization=lambda x: x):
   with tf.variable_scope('residual_block'):
     shortcut = inputs
     if shortcut.get_shape().as_list()[2] != filters:
