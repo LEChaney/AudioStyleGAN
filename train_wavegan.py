@@ -432,8 +432,8 @@ def train(fps, args):
   D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
 
   # Variables for smoothly interpolating between LOD levels
-  steps_at_max_lod_var = tf.get_variable('steps_at_max_lod', shape=[], dtype=tf.int32, trainable=False)
-  steps_at_max_lod_incr_op = steps_at_max_lod_var.assign(steps_at_max_lod_var + 1)
+  steps_at_cur_lod_var = tf.get_variable('steps_at_cur_lod', shape=[], dtype=tf.int32, trainable=False)
+  steps_at_cur_lod_incr_op = steps_at_cur_lod_var.assign(steps_at_cur_lod_var + 1)
 
   def smoothstep(x, mi, mx):
     return mi + (mx-mi)*(lambda t: np.where(t < 0 , 0, np.where( t <= 1 , 3*t**2-2*t**3, 1 ) ) )( x )
@@ -449,36 +449,42 @@ def train(fps, args):
     _lod = 0
     while True:
       # Calculate Maximum LOD to train
-      step, steps_at_max_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_max_lod_var], feed_dict={lod: _lod})
-      max_lod = np.piecewise(float(steps_at_max_lod),
-                            [         steps_at_max_lod < 1500 ,  1500 <= steps_at_max_lod < 3000,
-                              3000 <= steps_at_max_lod < 4500 ,  4500 <= steps_at_max_lod < 6000,
-                              6000 <= steps_at_max_lod < 7500 ,  7500 <= steps_at_max_lod < 9000,
-                              9000 <= steps_at_max_lod < 10500, 10500 <= steps_at_max_lod < 12000,
-                             12000 <= steps_at_max_lod < 13500, 13500 <= steps_at_max_lod < 15000],
-                            [0, lambda x: smoothstep((x - 1500 ) / 1500, 0, 1),
-                             1, lambda x: smoothstep((x - 4500 ) / 1500, 1, 2),
-                             2, lambda x: smoothstep((x - 7500 ) / 1500, 2, 3),
-                             3, lambda x: smoothstep((x - 10500) / 1500, 3, 4),
-                             4, lambda x: smoothstep((x - 13500) / 1500, 4, 5),
+      step, steps_at_cur_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_cur_lod_var], feed_dict={lod: _lod})
+      cur_lod = np.piecewise(float(steps_at_cur_lod),
+                            [         steps_at_cur_lod < 5000 , 5000 <= steps_at_cur_lod < 10000,
+                             10000 <= steps_at_cur_lod < 15000, 15000 <= steps_at_cur_lod < 20000,
+                             20000 <= steps_at_cur_lod < 25000, 25000 <= steps_at_cur_lod < 30000,
+                             30000 <= steps_at_cur_lod < 35000, 35000 <= steps_at_cur_lod < 40000,
+                             40000 <= steps_at_cur_lod < 45000, 45000 <= steps_at_cur_lod < 50000],
+                            [0, lambda x: smoothstep((x - 5000 ) / 5000, 0, 1),
+                             1, lambda x: smoothstep((x - 15000) / 5000, 1, 2),
+                             2, lambda x: smoothstep((x - 25000) / 5000, 2, 3),
+                             3, lambda x: smoothstep((x - 35000) / 5000, 3, 4),
+                             4, lambda x: smoothstep((x - 45000) / 5000, 4, 5),
                              5])
       
-      # Randomly select an LOD to train from all previously trained LOD + the current (possibly blending) LOD
-      _lod = np.random.randint(math.ceil(max_lod) + 1)
-      if _lod >= max_lod:
-        _lod = max_lod
-        sess.run(steps_at_max_lod_incr_op, feed_dict={lod: _lod})
+      if cur_lod > 0:
+        # Randomly train on either, a previous LOD, or the current one.
+        random_prev_lod = np.random.randint(math.ceil(cur_lod))
+        _lod = np.random.choice([cur_lod, random_prev_lod]) # 50% probability of training on the current LOD
+      else:
+        _lod = cur_lod
+      
+      # Increment step counter when training on current LOD to smoothly interpolate between LOD levels.
+      if _lod == cur_lod:
+          sess.run(steps_at_cur_lod_incr_op, feed_dict={lod: _lod})
+
 
       # Output current LOD and 'steps at max LOD' to tensorboard
       step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
       lod_summary = tf.Summary(value=[
-        tf.Summary.Value(tag="current_lod", simple_value=float(max_lod)),
+        tf.Summary.Value(tag="current_lod", simple_value=float(cur_lod)),
       ])
-      steps_at_max_lod_summary = tf.Summary(value=[
-        tf.Summary.Value(tag="steps_at_max_lod", simple_value=float(steps_at_max_lod))
+      steps_at_cur_lod_summary = tf.Summary(value=[
+        tf.Summary.Value(tag="steps_at_cur_lod", simple_value=float(steps_at_cur_lod))
       ])
       summary_writer.add_summary(lod_summary, step)
-      summary_writer.add_summary(steps_at_max_lod_summary, step)
+      summary_writer.add_summary(steps_at_cur_lod_summary, step)
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
