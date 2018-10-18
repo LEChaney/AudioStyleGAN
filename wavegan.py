@@ -292,15 +292,16 @@ def WaveGANGenerator(
   # [16, 512] -> [16, 512]
   with tf.variable_scope('layer_0'):
     h_code = residual_block(h_code, filters=dim * 32, kernel_size=kernel_len)
-    tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(to_audio(h_code)))))), 16000, max_outputs=10, family='G_audio_lod_0')
+    if (context_embedding is not None):
+      h_code = add_conditioning(h_code, c_code)
+    audio_lod = to_audio(h_code)
+    tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='G_audio_lod_0')
 
   # Layer 1
   # [16, 512] -> [64, 256]
   with tf.variable_scope('upconv_1'):
     on_amount = lod-0
-    if (context_embedding is not None):
-      h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=to_audio(h_code), filters=dim * 16, kernel_size=kernel_len, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='G_audio_lod_1')
 
