@@ -89,9 +89,9 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
 
         # Convolution layers
         with tf.variable_scope('conv_0'):
+          code = nn_upsample(code, stride) # Upsample
           code = normalization(code)
           code = activation(code) # Pre-Activation
-          code = nn_upsample(code, stride) # Upsample
           code = tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same')
         with tf.variable_scope('conv_1'):
           code = normalization(code)
@@ -275,6 +275,7 @@ def WaveGANGenerator(
 
   if use_batchnorm:
     batchnorm = lambda x: tf.layers.batch_normalization(x, training=train)
+    _batchnorm = lambda x: tf.contrib.layers.batch_norm(x, is_training=train, updates_collections=None) # Hacky fix for weird tensorflow bug that only happens when using batchnorm in an up_block
   else:
     batchnorm = lambda x: x
 
@@ -307,7 +308,7 @@ def WaveGANGenerator(
   # [16, 512] -> [64, 256]
   with tf.variable_scope('upconv_1'):
     on_amount = lod-0
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='G_audio_lod_1')
 
@@ -317,7 +318,7 @@ def WaveGANGenerator(
     on_amount = lod-1
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='G_audio_lod_2')
 
@@ -327,7 +328,7 @@ def WaveGANGenerator(
     on_amount = lod-2
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='G_audio_lod_3')
 
@@ -337,7 +338,7 @@ def WaveGANGenerator(
     on_amount = lod-3
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(audio_lod), 16000, max_outputs=10, family='G_audio_lod_4')
 
@@ -348,7 +349,7 @@ def WaveGANGenerator(
     on_amount = lod-4
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', audio_lod, 16000, max_outputs=10, family='G_audio_lod_5')
 
