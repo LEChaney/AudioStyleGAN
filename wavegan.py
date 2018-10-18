@@ -292,6 +292,7 @@ def WaveGANGenerator(
   # [16, 512] -> [16, 512]
   with tf.variable_scope('layer_0'):
     h_code = residual_block(h_code, filters=dim * 32, kernel_size=kernel_len)
+    tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(to_audio(h_code)))))), 16000, max_outputs=10, family='G_audio_lod_0')
 
   # Layer 1
   # [16, 512] -> [64, 256]
@@ -301,6 +302,7 @@ def WaveGANGenerator(
       h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=to_audio(h_code), filters=dim * 16, kernel_size=kernel_len, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
+    tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='G_audio_lod_1')
 
   # Layer 2
   # [64, 256] -> [256, 128]
@@ -310,6 +312,7 @@ def WaveGANGenerator(
       h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
+    tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='G_audio_lod_2')
 
   # Layer 3
   # [256, 128] -> [1024, 64]
@@ -319,6 +322,7 @@ def WaveGANGenerator(
       h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
+    tf.summary.audio('G_audio', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='G_audio_lod_3')
 
   # Layer 3
   # [1024, 64] -> [4096, 32]
@@ -328,6 +332,7 @@ def WaveGANGenerator(
       h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
+    tf.summary.audio('G_audio', nn_upsample(audio_lod), 16000, max_outputs=10, family='G_audio_lod_4')
 
   # Layer 4
   # [4096, 32] -> [16384, 16] (h_code)
@@ -338,6 +343,7 @@ def WaveGANGenerator(
       h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, on_amount=on_amount)
     tf.summary.scalar('on_amount', on_amount)
+    tf.summary.audio('G_audio', audio_lod, 16000, max_outputs=10, family='G_audio_lod_5')
 
   # Automatically update batchnorm moving averages every time G is used during training
   if train and use_batchnorm:
@@ -383,7 +389,7 @@ def encode_audio_stage_1(x,
     phaseshuffle = lambda x: x
 
   with tf.variable_scope('audio_encode_stage_1'):
-    tf.summary.audio('input_audio', x, 16000, max_outputs=1)
+    tf.summary.audio('input_audio', x, 16000, max_outputs=10, family='D_input_audio')
 
     # Layer 0
     # [16384, 1] -> [16384, 16] (audio_lod)
@@ -391,7 +397,7 @@ def encode_audio_stage_1(x,
     with tf.variable_scope('downconv_0'):
       on_amount = lod-4
       h_code, audio_lod = down_block(from_audio(x, dim), audio_lod=x, filters=dim * 2, kernel_size=kernel_len, on_amount=on_amount)
-      tf.summary.audio('audio_downsample', nn_upsample(audio_lod), 16000, max_outputs=1)
+      tf.summary.audio('audio_downsample', nn_upsample(audio_lod), 16000, max_outputs=10, family='D_audio_lod_4')
       tf.summary.scalar('on_amount', on_amount)
       
 
@@ -400,7 +406,7 @@ def encode_audio_stage_1(x,
     with tf.variable_scope('downconv_1'):
       on_amount = lod-3
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, on_amount=on_amount)
-      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=1)
+      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='D_audio_lod_3')
       tf.summary.scalar('on_amount', on_amount)
 
     return h_code, audio_lod
@@ -431,7 +437,7 @@ def encode_audio_stage_2(x,
     with tf.variable_scope('downconv_2'):
       on_amount = lod-2
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, on_amount=on_amount)
-      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=1)
+      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='D_audio_lod_2')
       tf.summary.scalar('on_amount', on_amount)
 
     # Layer 3
@@ -439,7 +445,7 @@ def encode_audio_stage_2(x,
     with tf.variable_scope('downconv_3'):
       on_amount = lod-1
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, on_amount=on_amount)
-      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=1)
+      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='D_audio_lod_1')
       tf.summary.scalar('on_amount', on_amount)
 
     # Layer 4
@@ -447,7 +453,7 @@ def encode_audio_stage_2(x,
     with tf.variable_scope('downconv_4'):
       on_amount = lod-0
       output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 32, kernel_size=kernel_len, on_amount=on_amount)
-      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=1)
+      tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='D_audio_lod_0')
       tf.summary.scalar('on_amount', on_amount)
 
     return output, audio_lod
