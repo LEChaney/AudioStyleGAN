@@ -475,7 +475,7 @@ def train(fps, args):
           sess.run(steps_at_cur_lod_incr_op, feed_dict={lod: _lod})
 
 
-      # Output current LOD and 'steps at max LOD' to tensorboard
+      # Output current LOD and 'steps at currrent LOD' to tensorboard
       step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
       lod_summary = tf.Summary(value=[
         tf.Summary.Value(tag="current_lod", simple_value=float(cur_lod)),
