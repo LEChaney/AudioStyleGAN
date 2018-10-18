@@ -24,7 +24,8 @@ def avg_downsample(inputs, stride=4):
 
 
 def lrelu(inputs, alpha=0.2):
-  return tf.maximum(alpha * inputs, inputs)
+  with tf.variable_scope('lrelu'):
+    return tf.maximum(alpha * inputs, inputs)
   
 
 def to_audio(in_code, pre_activation=lrelu, post_activation=tf.tanh):
