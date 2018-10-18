@@ -27,11 +27,11 @@ def lrelu(inputs, alpha=0.2):
   return tf.maximum(alpha * inputs, inputs)
   
 
-def to_audio(in_code, activation=lrelu):
+def to_audio(in_code, activation=tf.tanh):
   '''
   Converts 2d feature map into an audio clip.
   Usage Note: :param in_code: is expected to be non-activated (linear).
-  :param activation: will be applied to in_code before downsampling.
+  :param activation: will be applied to in_code before downsampling feature dimensions.
   '''
   with tf.variable_scope('to_audio'):
     return tf.layers.conv1d(activation(in_code), filters=1, kernel_size=1, strides=1, padding='same')
@@ -39,7 +39,8 @@ def to_audio(in_code, activation=lrelu):
 def from_audio(inputs, out_feature_maps):
   '''
   Converts an input audio clips into a 2d feature maps.
-  Usage Note: output is linear transform (no non-linear activation function applied)
+  Usage Note: Output is linear transform (no non-linear activation function applied).
+              Intended to be used before a residual block, that does pre-activation as its first step.
   :param out_feature_maps: The number of feature maps to output.
   '''
   with tf.variable_scope('from_audio'):
