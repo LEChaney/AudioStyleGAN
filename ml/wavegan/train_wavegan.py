@@ -22,7 +22,7 @@ from functools import reduce
 """
 _FS = 16000
 _WINDOW_LEN = 16384
-_D_Z = 256
+_D_Z = 128
 
 
 """
@@ -298,30 +298,26 @@ def train(fps, args):
     # Warmup Conditional Loss
     # D_warmup_loss = D_loss_real + D_loss_wrong
 
-    # Stack duplicate context embeddings for extra interps on wrong audio
-    interp_args = args.wavegan_d_kwargs.copy()
-    interp_args['context_embedding'] = tf.concat([interp_args['context_embedding'], interp_args['context_embedding']], 0)
-
     # Conditional Gradient Penalty
-    alpha = tf.random_uniform(shape=[args.train_batch_size * 2, 1, 1], minval=0., maxval=1.)
-    real = tf.concat([x, x], 0)
-    fake = tf.concat([G_z, wrong_audio], 0)
+    alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
+    real = x
+    fake = tf.concat([G_z[:args.train_batch_size // 2], wrong_audio[:args.train_batch_size // 2]], 0)
     differences = fake - real
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, lod, **interp_args)[0] # Only want conditional output
+      D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[0] # Only want conditional output
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     cond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
 
     # Unconditional Gradient Penalty
-    alpha = tf.random_uniform(shape=[args.train_batch_size * 2, 1, 1], minval=0., maxval=1.)
-    real = tf.concat([x, wrong_audio], 0)
-    fake = tf.concat([G_z, G_z], 0)
+    alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
+    real = tf.concat([x[:args.train_batch_size // 2], wrong_audio[:args.train_batch_size // 2]], 0)
+    fake = G_z
     differences = fake - real
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, lod, **interp_args)[1] # Only want unconditional output
+      D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[1] # Only want unconditional output
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     uncond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
@@ -450,18 +446,19 @@ def train(fps, args):
     while True:
       # Calculate Maximum LOD to train
       step, steps_at_cur_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_cur_lod_var], feed_dict={lod: _lod})
-      cur_lod = np.piecewise(float(steps_at_cur_lod),
-                            [         steps_at_cur_lod < 5000 , 5000 <= steps_at_cur_lod < 10000,
-                             10000 <= steps_at_cur_lod < 15000, 15000 <= steps_at_cur_lod < 20000,
-                             20000 <= steps_at_cur_lod < 25000, 25000 <= steps_at_cur_lod < 30000,
-                             30000 <= steps_at_cur_lod < 35000, 35000 <= steps_at_cur_lod < 40000,
-                             40000 <= steps_at_cur_lod < 45000, 45000 <= steps_at_cur_lod < 50000],
-                            [0, lambda x: smoothstep((x - 5000 ) / 5000, 0, 1),
-                             1, lambda x: smoothstep((x - 15000) / 5000, 1, 2),
-                             2, lambda x: smoothstep((x - 25000) / 5000, 2, 3),
-                             3, lambda x: smoothstep((x - 35000) / 5000, 3, 4),
-                             4, lambda x: smoothstep((x - 45000) / 5000, 4, 5),
-                             5])
+      # cur_lod = np.piecewise(float(steps_at_cur_lod),
+      #                       [         steps_at_cur_lod < 5000 , 5000 <= steps_at_cur_lod < 10000,
+      #                        10000 <= steps_at_cur_lod < 15000, 15000 <= steps_at_cur_lod < 20000,
+      #                        20000 <= steps_at_cur_lod < 25000, 25000 <= steps_at_cur_lod < 30000,
+      #                        30000 <= steps_at_cur_lod < 35000, 35000 <= steps_at_cur_lod < 40000,
+      #                        40000 <= steps_at_cur_lod < 45000, 45000 <= steps_at_cur_lod < 50000],
+      #                       [0, lambda x: smoothstep((x - 5000 ) / 5000, 0, 1),
+      #                        1, lambda x: smoothstep((x - 15000) / 5000, 1, 2),
+      #                        2, lambda x: smoothstep((x - 25000) / 5000, 2, 3),
+      #                        3, lambda x: smoothstep((x - 35000) / 5000, 3, 4),
+      #                        4, lambda x: smoothstep((x - 45000) / 5000, 4, 5),
+      #                        5])
+      cur_lod = 5
       
       # Randomly select n LOD to train from all previously trained LODs + the current (possibly blending) LOD
       _lod = np.random.randint(math.ceil(cur_lod) + 1)
