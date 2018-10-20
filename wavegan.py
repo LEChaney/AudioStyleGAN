@@ -270,7 +270,7 @@ def WaveGANGenerator(
     upsample='zeros',
     train=False,
     context_embedding=None,
-    embedding_dim=256):
+    embedding_dim=128):
   batch_size = tf.shape(z)[0]
 
   if use_batchnorm:
@@ -379,13 +379,13 @@ def apply_phaseshuffle(x, rad, pad_type='reflect'):
   return x
 
 
-def encode_audio_stage_1(x,
+def encode_audio(x,
     lod,
     kernel_len=24,
     dim=16,
     use_batchnorm=False,
     phaseshuffle_rad=0,
-    embedding_dim=256):
+    embedding_dim=128):
   if use_batchnorm:
     batchnorm = lambda x: tf.layers.batch_normalization(x, training=True)
   else:
@@ -396,7 +396,7 @@ def encode_audio_stage_1(x,
   else:
     phaseshuffle = lambda x: x
 
-  with tf.variable_scope('audio_encode_stage_1'):
+  with tf.variable_scope('audio_encode'):
     tf.summary.audio('input_audio', x, 16000, max_outputs=10, family='D_input_audio')
 
     # Layer 0
@@ -416,35 +416,12 @@ def encode_audio_stage_1(x,
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='D_audio_lod_3')
       tf.summary.scalar('on_amount', on_amount)
-
-    return h_code, audio_lod
-
-
-def encode_audio_stage_2(x,
-    audio_lod,
-    lod,
-    kernel_len=24,
-    dim=16,
-    use_batchnorm=False,
-    phaseshuffle_rad=0,
-    embedding_dim=256):
-  if use_batchnorm:
-    batchnorm = lambda x: tf.layers.batch_normalization(x, training=True)
-  else:
-    batchnorm = lambda x: x
-
-  if phaseshuffle_rad > 0:
-    phaseshuffle = lambda x: apply_phaseshuffle(x, phaseshuffle_rad)
-  else:
-    phaseshuffle = lambda x: x
-
-  with tf.variable_scope('audio_encode_stage_2'):
+    
     # Layer 2
     # [1024, 64] -> [256, 128]
-    output = x
     with tf.variable_scope('downconv_2'):
       on_amount = lod-2
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+      h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='D_audio_lod_2')
       tf.summary.scalar('on_amount', on_amount)
 
@@ -452,7 +429,7 @@ def encode_audio_stage_2(x,
     # [256, 128] -> [64, 256]
     with tf.variable_scope('downconv_3'):
       on_amount = lod-1
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+      h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='D_audio_lod_1')
       tf.summary.scalar('on_amount', on_amount)
 
@@ -460,11 +437,11 @@ def encode_audio_stage_2(x,
     # [64, 256] -> [16, 512]
     with tf.variable_scope('downconv_4'):
       on_amount = lod-0
-      output, audio_lod = down_block(output, audio_lod=audio_lod, filters=dim * 32, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
+      h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 32, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
       tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='D_audio_lod_0')
       tf.summary.scalar('on_amount', on_amount)
 
-    return output, audio_lod
+    return h_code, audio_lod
 
 
 """
@@ -479,28 +456,23 @@ def WaveGANDiscriminator(
     use_batchnorm=False,
     phaseshuffle_rad=0,
     context_embedding=None,
-    embedding_dim=256,
+    embedding_dim=128,
     use_extra_uncond_output=False):
   if use_batchnorm:
     batchnorm = lambda x: tf.layers.batch_normalization(x, training=True)
   else:
     batchnorm = lambda x: x
 
-  stage_1, audio_lod_stage_1 = encode_audio_stage_1(x, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
-
-  with tf.variable_scope('unconditional'):
-    uncond_out, _ = encode_audio_stage_2(stage_1, audio_lod_stage_1, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
+  x_code, _ = encode_audio(x, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
   
   if (context_embedding is not None):
     with tf.variable_scope('conditional'):
-      cond_out, _ = encode_audio_stage_2(stage_1, audio_lod_stage_1, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
-
-      # Add conditioning to hidden state
+      # Add conditioning to audio encoding
       c_code = compress_embedding(context_embedding, embedding_dim)
-      cond_out = add_conditioning(cond_out, c_code)
+      cond_out = add_conditioning(x_code, c_code)
       output = cond_out
   else:
-    output = uncond_out
+    output = x_code
 
   # <-- TODO: Minibatch std deviation layer goes here
 
@@ -510,7 +482,7 @@ def WaveGANDiscriminator(
     output = residual_block(output, filters=cond_out.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
   if (use_extra_uncond_output) and (context_embedding is not None):
     with tf.variable_scope('final_convs_uncond'):
-      uncond_out = residual_block(uncond_out, filters=uncond_out.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
+      uncond_out = residual_block(x_code, filters=x_code.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
 
   # FC 1
   # [16, 512] -> [512]
