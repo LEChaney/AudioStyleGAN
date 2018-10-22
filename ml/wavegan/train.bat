@@ -4,7 +4,7 @@ python train_wavegan.py train .\train ^
 --use_extra_uncond_loss ^
 --wavegan_kernel_len 9 ^
 --wavegan_genr_upsample nn ^
---train_batch_size 50 ^
+--train_batch_size 44 ^
 --wavegan_disc_nupdates 1 ^
 --train_summary_secs 15
 
