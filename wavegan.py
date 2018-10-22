@@ -89,9 +89,9 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
 
         # Convolution layers
         with tf.variable_scope('conv_0'):
-          code = nn_upsample(code, stride) # Upsample
           code = normalization(code)
           code = activation(code) # Pre-Activation
+          code = nn_upsample(code, stride) # Upsample
           code = tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same')
         with tf.variable_scope('conv_1'):
           code = normalization(code)
