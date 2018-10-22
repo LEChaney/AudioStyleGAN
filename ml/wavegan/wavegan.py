@@ -10,12 +10,26 @@ def nn_upsample(inputs, stride=4):
   Upsamples an audio clip using nearest neighbor upsampling.
   Output is of size 'audio clip length' x 'stride'
   '''
-  with tf.variable_scope('upsample'):
+  with tf.variable_scope('nn_upsample'):
     w = tf.shape(inputs)[1]
     output = tf.expand_dims(inputs, axis=1)
     output = tf.image.resize_nearest_neighbor(output, [1, w * stride])
     output = output[:, 0]
     return output
+
+
+def tconv_upsample(inputs, filters, kernel_size=8, stride=4):
+  '''
+  Upsamples an audio clip using transpose convolution upsampling.
+  Output is of size 'audio clip length' x 'stride'
+  '''
+  with tf.variable_scope('tconv_upsample'):
+    return tf.layers.conv2d_transpose(
+      tf.expand_dims(inputs, axis=1),
+      filters,
+      kernel_size=(1, kernel_size),
+      strides=(1, stride),
+      padding='same')[:, 0]
 
 
 def avg_downsample(inputs, stride=4):
@@ -64,7 +78,7 @@ def add_conditioning(in_code, cond_embed):
     return h_c_code
 
 
-def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, normalization=lambda x: x):
+def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, normalization=lambda x: x, upsample_method='zeros'):
   '''
   Up Block
   '''
@@ -91,8 +105,13 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
         with tf.variable_scope('conv_0'):
           code = normalization(code)
           code = activation(code) # Pre-Activation
-          code = nn_upsample(code, stride) # Upsample
-          code = tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same')
+          if upsample_method == 'zeros':
+            code = tconv_upsample(code, filters, kernel_size, stride=stride) # Upsample - Transposed Convolution
+          elif upsample_method == 'nn':
+            code = nn_upsample(code, stride) # Upsample - Nearest Neighbor
+            code = tf.layers.conv1d(code, filters, kernel_size, strides=1, padding='same')
+          else:
+            raise NotImplementedError
         with tf.variable_scope('conv_1'):
           code = normalization(code)
           code = activation(code)  # Pre-Activation
@@ -308,7 +327,7 @@ def WaveGANGenerator(
   # [16, 512] -> [64, 256]
   with tf.variable_scope('upconv_1'):
     on_amount = lod-0
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='G_audio_lod_1')
 
@@ -318,7 +337,7 @@ def WaveGANGenerator(
     on_amount = lod-1
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='G_audio_lod_2')
 
@@ -328,7 +347,7 @@ def WaveGANGenerator(
     on_amount = lod-2
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='G_audio_lod_3')
 
@@ -338,7 +357,7 @@ def WaveGANGenerator(
     on_amount = lod-3
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(audio_lod), 16000, max_outputs=10, family='G_audio_lod_4')
 
@@ -349,7 +368,7 @@ def WaveGANGenerator(
     on_amount = lod-4
     if (context_embedding is not None):
       h_code = add_conditioning(h_code, c_code)
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', audio_lod, 16000, max_outputs=10, family='G_audio_lod_5')
 
