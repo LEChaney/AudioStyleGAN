@@ -459,11 +459,17 @@ def train(fps, args):
                              4, lambda x: smoothstep((x - 45000) / 5000, 4, 5),
                              5])
       
-      # Randomly select n LOD to train from all previously trained LODs + the current (possibly blending) LOD
-      _lod = np.random.randint(math.ceil(cur_lod) + 1)
-      if _lod >= cur_lod:
+      if cur_lod > 0:
+        # Randomly train on either, a previous LOD, or the current one.
+        random_prev_lod = np.random.randint(math.ceil(cur_lod))
+        _lod = np.random.choice([cur_lod, random_prev_lod]) # 50% probability of training on the current LOD
+      else:
         _lod = cur_lod
-        sess.run(steps_at_cur_lod_incr_op, feed_dict={lod: _lod})
+      
+      # Increment step counter when training on current LOD to smoothly interpolate between LOD levels.
+      if _lod == cur_lod:
+          sess.run(steps_at_cur_lod_incr_op, feed_dict={lod: _lod})
+
 
       # Output current LOD and 'steps at currrent LOD' to tensorboard
       step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
