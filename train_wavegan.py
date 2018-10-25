@@ -447,16 +447,16 @@ def train(fps, args):
       # Calculate Maximum LOD to train
       step, steps_at_cur_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_cur_lod_var], feed_dict={lod: _lod})
       cur_lod = np.piecewise(float(steps_at_cur_lod),
-                            [         steps_at_cur_lod < 5000 , 5000 <= steps_at_cur_lod < 10000,
-                             10000 <= steps_at_cur_lod < 15000, 15000 <= steps_at_cur_lod < 20000,
-                             20000 <= steps_at_cur_lod < 25000, 25000 <= steps_at_cur_lod < 30000,
-                             30000 <= steps_at_cur_lod < 35000, 35000 <= steps_at_cur_lod < 40000,
-                             40000 <= steps_at_cur_lod < 45000, 45000 <= steps_at_cur_lod < 50000],
-                            [0, lambda x: smoothstep((x - 5000 ) / 5000, 0, 1),
-                             1, lambda x: smoothstep((x - 15000) / 5000, 1, 2),
-                             2, lambda x: smoothstep((x - 25000) / 5000, 2, 3),
-                             3, lambda x: smoothstep((x - 35000) / 5000, 3, 4),
-                             4, lambda x: smoothstep((x - 45000) / 5000, 4, 5),
+                            [         steps_at_cur_lod < 10000, 10000 <= steps_at_cur_lod < 20000,
+                             20000 <= steps_at_cur_lod < 30000, 30000 <= steps_at_cur_lod < 40000,
+                             40000 <= steps_at_cur_lod < 50000, 50000 <= steps_at_cur_lod < 60000,
+                             60000 <= steps_at_cur_lod < 70000, 70000 <= steps_at_cur_lod < 80000,
+                             80000 <= steps_at_cur_lod < 90000, 90000 <= steps_at_cur_lod < 100000],
+                            [0, lambda x: smoothstep((x - 10000) / 10000, 0, 1),
+                             1, lambda x: smoothstep((x - 30000) / 10000, 1, 2),
+                             2, lambda x: smoothstep((x - 50000) / 10000, 2, 3),
+                             3, lambda x: smoothstep((x - 70000) / 10000, 3, 4),
+                             4, lambda x: smoothstep((x - 90000) / 10000, 4, 5),
                              5])
       
       if cur_lod > 0:
