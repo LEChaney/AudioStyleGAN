@@ -416,7 +416,8 @@ def encode_audio(x,
     phaseshuffle = lambda x: x
 
   with tf.variable_scope('audio_encode'):
-    tf.summary.audio('input_audio', x, 16000, max_outputs=10, family='D_input_audio')
+    if 'D_x/' in tf.get_default_graph().get_name_scope():
+      tf.summary.audio('input_audio', x, 16000, max_outputs=10, family='D_audio_lod_5')
 
     # Layer 0
     # [16384, 1] -> [16384, 16] (audio_lod)
@@ -424,7 +425,7 @@ def encode_audio(x,
     with tf.variable_scope('downconv_0'):
       on_amount = lod-4
       h_code, audio_lod = down_block(from_audio(x, dim), audio_lod=x, filters=dim * 2, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      if '/D_x/' in tf.get_variable_scope().name:
+      if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(audio_lod), 16000, max_outputs=10, family='D_audio_lod_4')
         tf.summary.scalar('on_amount', on_amount)
       
@@ -434,7 +435,7 @@ def encode_audio(x,
     with tf.variable_scope('downconv_1'):
       on_amount = lod-3
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      if '/D_x/' in tf.get_variable_scope().name:
+      if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='D_audio_lod_3')
         tf.summary.scalar('on_amount', on_amount)
     
@@ -443,7 +444,7 @@ def encode_audio(x,
     with tf.variable_scope('downconv_2'):
       on_amount = lod-2
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      if '/D_x/' in tf.get_variable_scope().name:
+      if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='D_audio_lod_2')
         tf.summary.scalar('on_amount', on_amount)
 
@@ -452,7 +453,7 @@ def encode_audio(x,
     with tf.variable_scope('downconv_3'):
       on_amount = lod-1
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      if '/D_x/' in tf.get_variable_scope().name:
+      if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='D_audio_lod_1')
         tf.summary.scalar('on_amount', on_amount)
 
@@ -461,7 +462,7 @@ def encode_audio(x,
     with tf.variable_scope('downconv_4'):
       on_amount = lod-0
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 32, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      if '/D_x/' in tf.get_variable_scope().name:
+      if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='D_audio_lod_0')
         tf.summary.scalar('on_amount', on_amount)
 
