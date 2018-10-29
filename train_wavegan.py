@@ -452,16 +452,16 @@ def train(fps, args):
       # Calculate Maximum LOD to train
       step, steps_at_cur_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_cur_lod_var], feed_dict={lod: _lod})
       cur_lod = np.piecewise(float(steps_at_cur_lod),
-                            [          steps_at_cur_lod < 20000 , 20000  <= steps_at_cur_lod < 40000,
-                             40000  <= steps_at_cur_lod < 60000 , 60000  <= steps_at_cur_lod < 80000,
-                             80000  <= steps_at_cur_lod < 100000, 100000 <= steps_at_cur_lod < 120000,
-                             120000 <= steps_at_cur_lod < 140000, 140000 <= steps_at_cur_lod < 160000,
-                             160000 <= steps_at_cur_lod < 180000, 180000 <= steps_at_cur_lod < 200000],
-                            [0, lambda x: smoothstep((x - 20000 ) / 20000, 0, 1),
-                             1, lambda x: smoothstep((x - 60000 ) / 20000, 1, 2),
-                             2, lambda x: smoothstep((x - 100000) / 20000, 2, 3),
-                             3, lambda x: smoothstep((x - 140000) / 20000, 3, 4),
-                             4, lambda x: smoothstep((x - 180000) / 20000, 4, 5),
+                            [          steps_at_cur_lod < 30000 , 30000  <= steps_at_cur_lod < 60000,
+                             60000  <= steps_at_cur_lod < 90000 , 90000  <= steps_at_cur_lod < 120000,
+                             120000 <= steps_at_cur_lod < 150000, 150000 <= steps_at_cur_lod < 200000,
+                             200000 <= steps_at_cur_lod < 250000, 250000 <= steps_at_cur_lod < 300000,
+                             300000 <= steps_at_cur_lod < 350000, 350000 <= steps_at_cur_lod < 400000],
+                            [0, lambda x: smoothstep((x - 30000 ) / 30000, 0, 1),
+                             1, lambda x: smoothstep((x - 90000 ) / 30000, 1, 2),
+                             2, lambda x: smoothstep((x - 150000) / 50000, 2, 3),
+                             3, lambda x: smoothstep((x - 250000) / 50000, 3, 4),
+                             4, lambda x: smoothstep((x - 350000) / 50000, 4, 5),
                              5])
       
       # if cur_lod > 0:
