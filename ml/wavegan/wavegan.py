@@ -503,10 +503,10 @@ def WaveGANDiscriminator(
 
   # Final residual block
   # [16, 512] -> [16, 512]
-  with tf.variable_scope('fco'):
+  with tf.variable_scope('frb'):
     output = residual_block(output, filters=cond_out.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
   if (use_extra_uncond_output) and (context_embedding is not None):
-    with tf.variable_scope('fcu'):
+    with tf.variable_scope('frb_u'):
       uncond_out = residual_block(x_code, filters=x_code.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
 
   # FC 1
