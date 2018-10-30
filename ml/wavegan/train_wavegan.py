@@ -11,6 +11,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python.training.summary_io import SummaryWriterCache
 from six.moves import xrange
 from tensorflow.python import debug as tf_debug
+from tensorflow.python.debug.lib import debug_data
 
 from history_buffer import HistoryBuffer
 import loader
@@ -413,11 +414,11 @@ def train(fps, args):
         learning_rate=5e-5)
   elif args.wavegan_loss == 'wgan-gp':
     G_opt = tf.train.AdamOptimizer(
-        learning_rate=1e-4,
+        learning_rate=5e-4,
         beta1=0.0,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
-        learning_rate=1e-4,
+        learning_rate=5e-4,
         beta1=0.0,
         beta2=0.9)
   else:
@@ -455,9 +456,17 @@ def train(fps, args):
                          4, lambda x: np_lerp_clip((x - 9000) / 1000, 4, 5),
                          5])
 
+  def my_filter_callable(datum, tensor):
+    if not isinstance(tensor, debug_data.InconvertibleTensorProto):
+      return np.any([np.any(np.greater_equal(tensor, 1.0)), np.any(np.less_equal(tensor, -1.0))])
+    else:
+      return False
+
   
   # Create a LocalCLIDebugHook and use it as a monitor
-  hooks = [tf_debug.LocalCLIDebugHook(dump_root='C:/d/t/')]
+  debug_hook = tf_debug.LocalCLIDebugHook(dump_root='C:/d/t/')
+  debug_hook.add_tensor_filter('large_values', my_filter_callable)
+  hooks = [debug_hook]
 
   # Run training
   with tf.train.MonitoredTrainingSession(
