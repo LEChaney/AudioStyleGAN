@@ -458,7 +458,7 @@ def train(fps, args):
 
   def my_filter_callable(datum, tensor):
     if (not isinstance(tensor, debug_data.InconvertibleTensorProto)) and (tensor.dtype == np.float32 or tensor.dtype == np.float64):
-      return np.any([np.any(np.greater_equal(tensor, 1.0)), np.any(np.less_equal(tensor, -1.0))])
+      return np.any([np.any(np.greater_equal(tensor, 50.0)), np.any(np.less_equal(tensor, -50.0))])
     else:
       return False
 
