@@ -10,6 +10,7 @@ import tensorflow_hub as hub
 from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python.training.summary_io import SummaryWriterCache
 from six.moves import xrange
+from tensorflow.python import debug as tf_debug
 
 from history_buffer import HistoryBuffer
 import loader
@@ -413,11 +414,11 @@ def train(fps, args):
   elif args.wavegan_loss == 'wgan-gp':
     G_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.5,
+        beta1=0.0,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
         learning_rate=1e-4,
-        beta1=0.5,
+        beta1=0.0,
         beta2=0.9)
   else:
     raise NotImplementedError()
@@ -442,24 +443,28 @@ def train(fps, args):
 
   def get_lod_at_step(step):
     return np.piecewise(float(step),
-                        [         step < 5000 , 5000  <= step < 10000,
-                         10000 <= step < 15000, 15000 <= step < 20000,
-                         20000 <= step < 25000, 25000 <= step < 30000,
-                         30000 <= step < 35000, 35000 <= step < 40000,
-                         40000 <= step < 45000, 45000 <= step < 50000],
-                        [0, lambda x: np_lerp_clip((x - 5000 ) / 5000, 0, 1),
-                         1, lambda x: np_lerp_clip((x - 15000) / 5000, 1, 2),
-                         2, lambda x: np_lerp_clip((x - 25000) / 5000, 2, 3),
-                         3, lambda x: np_lerp_clip((x - 35000) / 5000, 3, 4),
-                         4, lambda x: np_lerp_clip((x - 45000) / 5000, 4, 5),
+                        [        step < 1000, 1000 <= step < 2000,
+                         2000 <= step < 3000, 3000 <= step < 4000,
+                         4000 <= step < 5000, 5000 <= step < 6000,
+                         6000 <= step < 7000, 7000 <= step < 8000,
+                         8000 <= step < 9000, 9000 <= step < 10000],
+                        [0, lambda x: np_lerp_clip((x - 1000) / 1000, 0, 1),
+                         1, lambda x: np_lerp_clip((x - 3000) / 1000, 1, 2),
+                         2, lambda x: np_lerp_clip((x - 5000) / 1000, 2, 3),
+                         3, lambda x: np_lerp_clip((x - 7000) / 1000, 3, 4),
+                         4, lambda x: np_lerp_clip((x - 9000) / 1000, 4, 5),
                          5])
 
+  
+  # Create a LocalCLIDebugHook and use it as a monitor
+  hooks = [tf_debug.LocalCLIDebugHook(dump_root='C:/d/t/')]
 
   # Run training
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=args.train_dir,
       save_checkpoint_secs=args.train_save_secs,
-      save_summaries_secs=args.train_summary_secs) as sess:
+      save_summaries_secs=args.train_summary_secs,
+      hooks=hooks) as sess:
     # Get the summary writer for writing extra summary statistics
     summary_writer = SummaryWriterCache.get(args.train_dir)
 
