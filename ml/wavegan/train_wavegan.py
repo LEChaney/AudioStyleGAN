@@ -395,53 +395,44 @@ def train(fps, args):
     tf.summary.scalar('D_loss', D_loss)
 
   # Create (recommended) optimizer
-  lod_levels = 6
-  G_opts = []
-  D_opts = []
-  G_train_ops = []
-  D_train_ops = []
-  for i in range(lod_levels):
-    G_opts.append(None)
-    D_opts.append(None)
-    G_train_ops.append(None)
-    D_train_ops.append(None)
-    if args.wavegan_loss == 'dcgan':
-      G_opts[i] = tf.train.AdamOptimizer(
-          learning_rate=0.0002,
-          beta1=0.5)
-      D_opts[i] = tf.train.AdamOptimizer(
-          learning_rate=0.000002,
-          beta1=0.5)
-    elif args.wavegan_loss == 'lsgan':
-      G_opts[i] = tf.train.RMSPropOptimizer(
-          learning_rate=1e-4)
-      D_opts[i] = tf.train.RMSPropOptimizer(
-          learning_rate=1e-4)
-    elif args.wavegan_loss == 'wgan':
-      G_opts[i] = tf.train.RMSPropOptimizer(
-          learning_rate=5e-5)
-      D_opts[i] = tf.train.RMSPropOptimizer(
-          learning_rate=5e-5)
-    elif args.wavegan_loss == 'wgan-gp':
-      G_opts[i] = tf.train.AdamOptimizer(
-          learning_rate=5e-4,
-          beta1=0.5,
-          beta2=0.9)
-      D_opts[i] = tf.train.AdamOptimizer(
-          learning_rate=5e-4,
-          beta1=0.5,
-          beta2=0.9)
-    else:
-      raise NotImplementedError()
+  if args.wavegan_loss == 'dcgan':
+    G_opt = tf.train.AdamOptimizer(
+        learning_rate=0.0002,
+        beta1=0.5)
+    D_opt = tf.train.AdamOptimizer(
+        learning_rate=0.000002,
+        beta1=0.5)
+  elif args.wavegan_loss == 'lsgan':
+    G_opt = tf.train.RMSPropOptimizer(
+        learning_rate=1e-4)
+    D_opt = tf.train.RMSPropOptimizer(
+        learning_rate=1e-4)
+  elif args.wavegan_loss == 'wgan':
+    G_opt = tf.train.RMSPropOptimizer(
+        learning_rate=5e-5)
+    D_opt = tf.train.RMSPropOptimizer(
+        learning_rate=5e-5)
+  elif args.wavegan_loss == 'wgan-gp':
+    G_opt = tf.train.AdamOptimizer(
+        learning_rate=6e-4,
+        beta1=0.5,
+        beta2=0.9)
+    D_opt = tf.train.AdamOptimizer(
+        learning_rate=6e-4,
+        beta1=0.5,
+        beta2=0.9)
+  else:
+    raise NotImplementedError()
 
-    # Create training ops
-    G_train_ops[i] = G_opts[i].minimize(G_loss, var_list=G_vars,
-        global_step=tf.train.get_or_create_global_step())
-    D_train_ops[i] = D_opts[i].minimize(D_loss, var_list=D_vars)
+  # Optimizer internal state reset ops
+  reset_G_opt_op = tf.variables_initializer(G_opt.variables())
+  reset_D_opt_op = tf.variables_initializer(D_opt.variables())
 
-  # Variables for smoothly interpolating between LOD levels
-  steps_at_cur_lod_var = tf.get_variable('steps_at_cur_lod', shape=[], dtype=tf.int32, trainable=False)
-  steps_at_cur_lod_incr_op = steps_at_cur_lod_var.assign(steps_at_cur_lod_var + 1)
+  # Create training ops
+  G_train_op = G_opt.minimize(G_loss, var_list=G_vars,
+      global_step=tf.train.get_or_create_global_step())
+  D_train_op = D_opt.minimize(D_loss, var_list=D_vars)
+
 
   def smoothstep(x, mi, mx):
     return mi + (mx-mi)*(lambda t: np.where(t < 0 , 0, np.where( t <= 1 , 3*t**2-2*t**3, 1 ) ) )( x )
@@ -453,16 +444,16 @@ def train(fps, args):
 
   def get_lod_at_step(step):
     return np.piecewise(float(step),
-                        [         step < 2000 , 2000  <= step < 4000,
-                         4000  <= step < 6000 , 6000  <= step < 8000,
-                         8000  <= step < 10000, 10000 <= step < 12000,
-                         12000 <= step < 14000, 14000 <= step < 16000,
-                         16000 <= step < 18000, 18000 <= step < 20000],
-                        [0, lambda x: np_lerp_clip((x - 2000 ) / 2000, 0, 1),
-                         1, lambda x: np_lerp_clip((x - 6000 ) / 2000, 1, 2),
-                         2, lambda x: np_lerp_clip((x - 10000) / 2000, 2, 3),
-                         3, lambda x: np_lerp_clip((x - 14000) / 2000, 3, 4),
-                         4, lambda x: np_lerp_clip((x - 18000) / 2000, 4, 5),
+                        [         step < 5000 , 5000  <= step < 10000,
+                         10000 <= step < 15000, 15000 <= step < 20000,
+                         20000 <= step < 25000, 25000 <= step < 30000,
+                         30000 <= step < 35000, 35000 <= step < 40000,
+                         40000 <= step < 45000, 45000 <= step < 50000],
+                        [0, lambda x: np_lerp_clip((x - 5000 ) / 5000, 0, 1),
+                         1, lambda x: np_lerp_clip((x - 15000) / 5000, 1, 2),
+                         2, lambda x: np_lerp_clip((x - 25000) / 5000, 2, 3),
+                         3, lambda x: np_lerp_clip((x - 35000) / 5000, 3, 4),
+                         4, lambda x: np_lerp_clip((x - 45000) / 5000, 4, 5),
                          5])
 
   def my_filter_callable(datum, tensor):
@@ -478,7 +469,6 @@ def train(fps, args):
   # hooks = [debug_hook]
 
   # Run training
-  _lod = 0
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=args.train_dir,
       save_checkpoint_secs=args.train_save_secs,
@@ -486,53 +476,35 @@ def train(fps, args):
     # Get the summary writer for writing extra summary statistics
     summary_writer = SummaryWriterCache.get(args.train_dir)
 
+    cur_lod = 0
     while True:
       # Calculate Maximum LOD to train
-      step, steps_at_cur_lod = sess.run([tf.train.get_or_create_global_step(), steps_at_cur_lod_var], feed_dict={lod: _lod})
-      cur_lod = get_lod_at_step(steps_at_cur_lod)
+      step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod})
+      cur_lod = get_lod_at_step(step)
+      prev_lod = get_lod_at_step(step - 1)
 
-      # Train on previous lod while transitioning with probability equal to 1 - transition amount
-      if np.floor(cur_lod) != cur_lod:
-        train_cur_lod_prob, start_lod = np.modf(cur_lod) # start_lod: The lod level at the beginning of the transition
-        train_cur_lod_prob = np.minimum(train_cur_lod_prob, 0.1) # (minimum prob of training on current lod is 0.1)
-        _lod = np.random.choice([cur_lod, start_lod], p=[train_cur_lod_prob, 1 - train_cur_lod_prob])
-      else:
-        _lod = cur_lod
-        
-      # Increment steps when training at the current lod level
-      if _lod == cur_lod:
-        sess.run(steps_at_cur_lod_incr_op, feed_dict={lod: _lod})
+      # Reset optimizer internal state when new layers are introduced
+      if np.floor(cur_lod) != np.floor(prev_lod) or np.ceil(cur_lod) != np.ceil(prev_lod):
+        print("Resetting optimizers' internal states at step {}".format(step))
+        sess.run([reset_G_opt_op, reset_D_opt_op], feed_dict={lod: cur_lod})
 
-      # Get optimizer to use
-      opt_idx = int(np.ceil(_lod))
-      D_train_op = D_train_ops[opt_idx]
-      G_train_op = G_train_ops[opt_idx]
-
-      # Extra summary information
-      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: _lod}))
+      # Output current LOD and 'steps at currrent LOD' to tensorboard
+      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod}))
       lod_summary = tf.Summary(value=[
         tf.Summary.Value(tag="current_lod", simple_value=float(cur_lod)),
       ])
-      steps_at_cur_lod_summary = tf.Summary(value=[
-        tf.Summary.Value(tag="steps_at_cur_lod", simple_value=float(steps_at_cur_lod)),
-      ])
-      opt_idx_summary = tf.Summary(value=[
-        tf.Summary.Value(tag="optimizer_index", simple_value=float(opt_idx))
-      ])
       summary_writer.add_summary(lod_summary, step)
-      summary_writer.add_summary(steps_at_cur_lod_summary, step)
-      summary_writer.add_summary(opt_idx_summary, step)
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
-        sess.run(D_train_op, feed_dict={lod: _lod})
+        sess.run(D_train_op, feed_dict={lod: cur_lod})
 
         # Enforce Lipschitz constraint for WGAN
         if D_clip_weights is not None:
-          sess.run(D_clip_weights, feed_dict={lod: _lod})
+          sess.run(D_clip_weights, feed_dict={lod: cur_lod})
 
       # Train generator
-      sess.run(G_train_op, feed_dict={lod: _lod})
+      sess.run(G_train_op, feed_dict={lod: cur_lod})
 
 
 """
