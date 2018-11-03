@@ -37,7 +37,7 @@ def train(fps, args):
    # wrong_cond_text, wrong_cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, wavs=False, conditionals=True, name='batch')
     
   # Make z vector
-  z = tf.random_normal([args.train_batch_size, _D_Z])
+  z = tf.random_uniform([args.train_batch_size, _D_Z], -1.0, 1.0)
 
   embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
   cond_text_embed = embed(cond_text)
@@ -415,11 +415,11 @@ def train(fps, args):
   elif args.wavegan_loss == 'wgan-gp':
     G_opt = tf.train.AdamOptimizer(
         learning_rate=6e-4,
-        beta1=0.0,
+        beta1=0.5,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
         learning_rate=6e-4,
-        beta1=0.0,
+        beta1=0.5,
         beta2=0.9)
   else:
     raise NotImplementedError()
@@ -541,7 +541,7 @@ def infer(args):
 
   # Subgraph that generates latent vectors
   samp_z_n = tf.placeholder(tf.int32, [], name='samp_z_n')
-  samp_z = tf.random_normal([samp_z_n, _D_Z], name='samp_z')
+  samp_z = tf.random_uniform([samp_z_n, _D_Z], -1.0, 1.0, name='samp_z')
 
   # Input zo
   z = tf.placeholder(tf.float32, [None, _D_Z], name='z')
