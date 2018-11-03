@@ -494,7 +494,7 @@ def train(fps, args):
       # Train on previous lod while transitioning with probability equal to 1 - transition amount
       if np.floor(cur_lod) != cur_lod:
         train_cur_lod_prob, start_lod = np.modf(cur_lod) # start_lod: The lod level at the beginning of the transition
-        train_cur_lod_prob = np.maximum(train_cur_lod_prob, 0.1) # (minimum prob of training on current lod is 0.5)
+        train_cur_lod_prob = np.minimum(train_cur_lod_prob, 0.1) # (minimum prob of training on current lod is 0.1)
         _lod = np.random.choice([cur_lod, start_lod], p=[train_cur_lod_prob, 1 - train_cur_lod_prob])
       else:
         _lod = cur_lod
