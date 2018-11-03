@@ -50,10 +50,12 @@ def to_audio(in_code, pre_activation=lrelu, post_activation=tf.tanh, normalizati
   :param post_activation: Will be applied after downsampling to get final audio output.
   '''
   with tf.variable_scope('to_audio'):
-    output = normalization(in_code)
+    output = in_code
+    output = normalization(output)
     output = pre_activation(output)
     output = tf.layers.conv1d(output, filters=1, kernel_size=1, strides=1, padding='same')
-    return post_activation(output)
+    # output = post_activation(output)
+    return output
 
 def from_audio(inputs, out_feature_maps):
   '''
@@ -318,8 +320,6 @@ def WaveGANGenerator(
   # [16, 512] -> [16, 512]
   with tf.variable_scope('l0'):
     h_code = residual_block(h_code, filters=dim * 32, kernel_size=kernel_len, normalization=batchnorm)
-    if (context_embedding is not None):
-      h_code = add_conditioning(h_code, c_code)
     audio_lod = to_audio(h_code, normalization=batchnorm)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='G_audio_lod_0')
 
@@ -335,8 +335,6 @@ def WaveGANGenerator(
   # [64, 256] -> [256, 128]
   with tf.variable_scope('up2'):
     on_amount = lod-1
-    if (context_embedding is not None):
-      h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='G_audio_lod_2')
@@ -345,8 +343,6 @@ def WaveGANGenerator(
   # [256, 128] -> [1024, 64]
   with tf.variable_scope('up3'):
     on_amount = lod-2
-    if (context_embedding is not None):
-      h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='G_audio_lod_3')
@@ -355,8 +351,6 @@ def WaveGANGenerator(
   # [1024, 64] -> [4096, 32]
   with tf.variable_scope('up4'):
     on_amount = lod-3
-    if (context_embedding is not None):
-      h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(audio_lod), 16000, max_outputs=10, family='G_audio_lod_4')
@@ -366,8 +360,6 @@ def WaveGANGenerator(
   # [16384, 16] -> [16384, 1] (audio_lod)
   with tf.variable_scope('up5'):
     on_amount = lod-4
-    if (context_embedding is not None):
-      h_code = add_conditioning(h_code, c_code)
     h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', audio_lod, 16000, max_outputs=10, family='G_audio_lod_5')
@@ -490,21 +482,22 @@ def WaveGANDiscriminator(
 
   x_code, _ = encode_audio(x, lod, kernel_len, dim, use_batchnorm, phaseshuffle_rad, embedding_dim)
   
-  if (context_embedding is not None):
-    with tf.variable_scope('cond'):
-      # Add conditioning to audio encoding
-      c_code = compress_embedding(context_embedding, embedding_dim)
-      cond_out = add_conditioning(x_code, c_code)
-      output = cond_out
-  else:
-    output = x_code
+  # if (context_embedding is not None):
+  #   with tf.variable_scope('cond'):
+  #     # Add conditioning to audio encoding
+  #     c_code = compress_embedding(context_embedding, embedding_dim)
+  #     cond_out = add_conditioning(x_code, c_code)
+  #     output = cond_out
+  # else:
+    # output = x_code
+  output = x_code
 
   # <-- TODO: Minibatch std deviation layer goes here
 
   # Final residual block
   # [16, 512] -> [16, 512]
   with tf.variable_scope('frb'):
-    output = residual_block(output, filters=cond_out.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
+    output = residual_block(output, filters=output.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
   if (use_extra_uncond_output) and (context_embedding is not None):
     with tf.variable_scope('frb_u'):
       uncond_out = residual_block(x_code, filters=x_code.get_shape().as_list()[2], kernel_size=kernel_len, normalization=batchnorm, stride=1, padding='same')
@@ -514,6 +507,12 @@ def WaveGANDiscriminator(
   batch_size = tf.shape(x)[0]
   with tf.variable_scope('fc1'):
     output = tf.reshape(output, [batch_size, -1]) # Flatten
+
+    # Add conditioning
+    if (context_embedding is not None):
+      c_code = compress_embedding(context_embedding, embedding_dim)
+      output = tf.concat([output, c_code], 1)
+
     output = batchnorm(output)
     output = lrelu(output)
     output = tf.layers.dense(output, dim * 32)
@@ -532,9 +531,10 @@ def WaveGANDiscriminator(
     output = tf.layers.dense(output, 1)
 
     if (use_extra_uncond_output) and (context_embedding is not None):
-      uncond_out = batchnorm(uncond_out)
-      uncond_out = lrelu(uncond_out)
-      uncond_out = tf.layers.dense(uncond_out, 1)
+      with tf.variable_scope('fc2_u'):
+        uncond_out = batchnorm(uncond_out)
+        uncond_out = lrelu(uncond_out)
+        uncond_out = tf.layers.dense(uncond_out, 1)
       return [output, uncond_out]
     else:
       return [output]
