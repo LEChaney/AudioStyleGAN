@@ -85,22 +85,22 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
   Up Block
   '''
   with tf.variable_scope('up'):
+    skip_connection_audio = nn_upsample(audio_lod, stride)
+
     def skip():
       with tf.variable_scope('sk'):
-        skip_connection_audio = nn_upsample(audio_lod, stride)
         skip_connection_code = tf.zeros([tf.shape(inputs)[0], tf.shape(inputs)[1] * stride, filters], dtype=tf.float32)
         return skip_connection_code, skip_connection_audio
 
     def transition():
       with tf.variable_scope('tr'):
-        skip_connection_audio = nn_upsample(audio_lod, stride)
-
         # Shortcut
         with tf.variable_scope('sh'):
           shortcut = nn_upsample(inputs, stride)
           if shortcut.get_shape().as_list()[2] != filters:
             shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
+        # TODO: Only compute code when fully on (this is when the code will actually be used by the next layer)
         code = inputs
 
         # Convolution layers
@@ -140,15 +140,14 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
   '''
   with tf.variable_scope('db'):
     audio_lod = avg_downsample(audio_lod, stride)
+    skip_connection_code = from_audio(audio_lod, filters)
+
     def skip():
       with tf.variable_scope('dk'):
-        skip_connection_code = from_audio(audio_lod, filters)
         return skip_connection_code
 
     def transition():
       with tf.variable_scope('tr'):
-        skip_connection_code = from_audio(audio_lod, filters)
-
         # Shortcut
         with tf.variable_scope('sh'):
           shortcut = avg_downsample(inputs, stride)
