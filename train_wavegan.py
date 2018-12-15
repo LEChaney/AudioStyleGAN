@@ -32,19 +32,23 @@ _D_Z = 128
 """
 def train(fps, args):
   with tf.name_scope('loader'):
-    x, cond_text, _ = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
+    if args.use_conditioning:
+      x, cond_text, _ = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=True, name='batch')
+    else:
+      x = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=False, name='batch')
     wrong_audio = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, conditionals=False, name='wrong_batch')
    # wrong_cond_text, wrong_cond_text_embed = loader.get_batch(fps, args.train_batch_size, _WINDOW_LEN, args.data_first_window, wavs=False, conditionals=True, name='batch')
     
   # Make z vector
   z = tf.random_normal([args.train_batch_size, _D_Z])
 
-  embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
-  cond_text_embed = embed(cond_text)
+  if args.use_conditioning:
+    embed = hub.Module('https://tfhub.dev/google/elmo/2', trainable=False, name='embed')
+    cond_text_embed = embed(cond_text)
 
-  # Add conditioning input to the model
-  args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
-  args.wavegan_d_kwargs['context_embedding'] = args.wavegan_g_kwargs['context_embedding']
+    # Add conditioning input to the model
+    args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
+    args.wavegan_d_kwargs['context_embedding'] = args.wavegan_g_kwargs['context_embedding']
 
   lod = tf.placeholder(tf.float32, shape=[])
   
@@ -74,7 +78,8 @@ def train(fps, args):
   tf.summary.scalar('G_z_rms', tf.reduce_mean(G_z_rms))
   tf.summary.audio('x', x, _FS, max_outputs=10)
   tf.summary.audio('G_z', G_z, _FS, max_outputs=10)
-  tf.summary.text('Conditioning Text', cond_text[:10])
+  if args.use_conditioning:
+    tf.summary.text('Conditioning Text', cond_text[:10])
 
   # with tf.variable_scope('G'):
   #   # Make history buffer
@@ -139,8 +144,9 @@ def train(fps, args):
   # Make fake / wrong discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
     D_G_z = WaveGANDiscriminator(G_z, lod, **args.wavegan_d_kwargs)
-  with tf.name_scope('D_w'), tf.variable_scope('D', reuse=True):
-    D_w = WaveGANDiscriminator(wrong_audio, lod, **args.wavegan_d_kwargs)
+  if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+    with tf.name_scope('D_w'), tf.variable_scope('D', reuse=True):
+      D_w = WaveGANDiscriminator(wrong_audio, lod, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
@@ -171,14 +177,14 @@ def train(fps, args):
     D_loss_wrong = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=D_w[0],
       labels=fake
-    ))
+    )) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
     D_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=D_x[0],
       labels=real
     ))
 
     # Unconditional D Losses
-    if args.use_extra_uncond_loss:
+    if args.use_conditioning and args.use_extra_uncond_loss:
       D_loss_fake_uncond = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
         logits=D_G_z[1],
         labels=fake
@@ -212,11 +218,11 @@ def train(fps, args):
 
     # Conditional D Loss
     D_loss_real = tf.reduce_mean((D_x[0] - 1.) ** 2)
-    D_loss_wrong = tf.reduce_mean(D_w[0] ** 2)
+    D_loss_wrong = tf.reduce_mean(D_w[0] ** 2) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
     D_loss_fake = tf.reduce_mean(D_G_z[0] ** 2)
 
     # Unconditional D Loss
-    if args.use_extra_uncond_loss:
+    if args.use_conditioning and args.use_extra_uncond_loss:
       D_loss_real_uncond = tf.reduce_mean((D_x[1] - 1.) ** 2)
       D_loss_wrong_uncond = tf.reduce_mean((D_w[1] - 1.) ** 2)
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1] ** 2)
@@ -241,11 +247,11 @@ def train(fps, args):
 
     # Conditional D Loss
     D_loss_real = -tf.reduce_mean(D_x[0])
-    D_loss_wrong = tf.reduce_mean(D_w[0])
+    D_loss_wrong = tf.reduce_mean(D_w[0]) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
     D_loss_fake = tf.reduce_mean(D_G_z[0]) 
 
     # Unconditional D Loss
-    if args.use_extra_uncond_loss:
+    if args.use_conditioning and args.use_extra_uncond_loss:
       D_loss_real_uncond = -tf.reduce_mean(D_x[1])
       D_loss_wrong_uncond = -tf.reduce_mean(D_w[1])
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1])
@@ -282,11 +288,11 @@ def train(fps, args):
 
     # Conditional D Loss
     D_loss_real = -tf.reduce_mean(D_x[0])
-    D_loss_wrong = tf.reduce_mean(D_w[0])
+    D_loss_wrong = tf.reduce_mean(D_w[0]) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
     D_loss_fake = tf.reduce_mean(D_G_z[0]) 
 
     # Unconditional D Loss
-    if args.use_extra_uncond_loss:
+    if args.use_conditioning and args.use_extra_uncond_loss:
       D_loss_real_uncond = -tf.reduce_mean(D_x[1])
       D_loss_wrong_uncond = -tf.reduce_mean(D_w[1])
       D_loss_fake_uncond = tf.reduce_mean(D_G_z[1])
@@ -297,50 +303,37 @@ def train(fps, args):
     else:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
 
-    # Warmup Conditional Loss
-    # D_warmup_loss = D_loss_real + D_loss_wrong
-
     # Conditional Gradient Penalty
     alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
     real = x
-    fake = tf.concat([G_z[:args.train_batch_size // 2], wrong_audio[:args.train_batch_size // 2]], 0)
+    if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+      fake = tf.concat([G_z[:args.train_batch_size // 2], wrong_audio[:args.train_batch_size // 2]], 0)
+    else:
+      fake = G_z
     differences = fake - real
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
       D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[0] # Only want conditional output
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
-    cond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
+    gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
 
     # Unconditional Gradient Penalty
-    alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
-    real = tf.concat([x[:args.train_batch_size // 2], wrong_audio[:args.train_batch_size // 2]], 0)
-    fake = G_z
-    differences = fake - real
-    interpolates = real + (alpha * differences)
-    with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[1] # Only want unconditional output
-    gradients = tf.gradients(D_interp, [interpolates])[0]
-    slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
-    uncond_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
-
-    # Warmup Gradient Penalty
-    # alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
-    # real = x
-    # fake = wrong_audio
-    # differences = fake - real
-    # interpolates = real + (alpha * differences)
-    # with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-    #   D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[0] # Only want conditional output
-    # gradients = tf.gradients(D_interp, [interpolates])[0]
-    # slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
-    # warmup_gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
-
-    gradient_penalty = (cond_gradient_penalty + uncond_gradient_penalty) / 2
+    if args.use_conditioning and args.use_extra_uncond_loss:
+      alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
+      real = tf.concat([x[:args.train_batch_size // 2], wrong_audio[:args.train_batch_size // 2]], 0)
+      fake = G_z
+      differences = fake - real
+      interpolates = real + (alpha * differences)
+      with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
+        D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[1] # Only want unconditional output
+      gradients = tf.gradients(D_interp, [interpolates])[0]
+      slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
+      gradient_penalty += tf.reduce_mean((slopes - 1.) ** 2.)
+      gradient_penalty /= 2
 
     LAMBDA = 10
     D_loss += LAMBDA * gradient_penalty
-    # D_warmup_loss += LAMBDA * warmup_gradient_penalty
   else:
     raise NotImplementedError()
 
@@ -856,6 +849,8 @@ if __name__ == '__main__':
       help='Radius of phase shuffle operation')
   wavegan_args.add_argument('--use_extra_uncond_loss', action='store_true', dest='use_extra_uncond_loss',
       help='If set, use post-processing filter')
+  wavegan_args.add_argument('--no_conditioning', action='store_false', dest='use_conditioning',
+      help='If set disable conditioning the model on text')
 
   train_args = parser.add_argument_group('Train')
   train_args.add_argument('--train_batch_size', type=int,
@@ -894,6 +889,7 @@ if __name__ == '__main__':
     wavegan_genr_pp_len=512,
     wavegan_disc_phaseshuffle=2,
     use_extra_uncond_loss=False,
+    use_conditioning=True,
     train_batch_size=64,
     train_save_secs=300,
     train_summary_secs=120,
