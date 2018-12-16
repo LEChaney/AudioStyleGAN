@@ -103,9 +103,9 @@ def map_latent(z_in):
 def inject_noise(inputs):
   with tf.variable_scope('noise'):
     inputs_rank = inputs.shape.ndims
-    params_shape_broadcast = list([1 for _ in range(1, inputs_rank-1)] + [inputs.shape[-1].value])
-    noise_bias = tf.get_variable('noise_b', shape=params_shape_broadcast)
-    noise_scale = tf.get_variable('noise_s', shape=params_shape_broadcast)
+    params_shape_broadcast = list([1 for _ in range(inputs_rank-1)] + [inputs.shape[-1].value])
+    noise_bias = tf.get_variable('b', shape=params_shape_broadcast)
+    noise_scale = tf.get_variable('s', shape=params_shape_broadcast)
     noise = noise_scale * tf.random_normal(tf.shape(inputs)) + noise_bias
     return inputs + noise
   
