@@ -1,4 +1,5 @@
 import tensorflow as tf
+from functools import partial
 
 
 def lerp_clip(a, b, t): 
@@ -10,29 +11,39 @@ def pixel_norm(x, epsilon=1e-8, axis=2):
     return x * tf.rsqrt(tf.reduce_mean(tf.square(x), axis=axis, keepdims=True) + epsilon)
 
 
-def layernorm(inputs):
-  '''
-  Layer normalization from improved wgan training paper
-  [https://github.com/igul222/improved_wgan_training/blob/master/tflib/ops/layernorm.py]
-  '''
-  with tf.variable_scope('layernorm'):
-    shape = inputs.get_shape().as_list()
-    norm_axes = [i for i in range(1, len(shape))] # First dimension is batch dimension, normalize over rest
-    mean, var = tf.nn.moments(inputs, norm_axes, keep_dims=True)
+def adaptive_inst_norm(w, inputs):
+  with tf.variable_scope('AdaIN'):
+    inputs_shape = inputs.shape
+    inputs_rank = inputs_shape.ndims
 
-    # Assume the 'neurons' axis is the last of norm_axes. This is the case for fully-connected and BWC conv layers.
-    n_neurons = shape[norm_axes[-1]]
+    # This function operates over feature maps (spatial features).
+    # Therefore it has no effect on non-spatial features (i.e. fully connected layers)
+    if len(inputs_shape) <= 2:
+      return inputs
 
-    offset = tf.get_variable('offset', initializer=lambda: tf.zeros(n_neurons, dtype=tf.float32))
-    scale = tf.get_variable('scale', initializer=lambda: tf.ones(n_neurons, dtype=tf.float32))
+    # Work out shapes and axes for later calculations
+    reduction_axis = inputs_rank - 1
+    params_shape_broadcast = list(
+          [-1] + [1 for _ in range(1, inputs_rank-1)] + [inputs_shape[reduction_axis].value])
+    moments_axes = list(range(inputs_rank))
+    del moments_axes[reduction_axis]
+    del moments_axes[0]
+    params_len = inputs_shape[reduction_axis]
+    
+    # Affine transform of w to scale and bias vectors
+    with tf.variable_scope('affine'):
+      y = tf.layers.dense(w, params_len * 2)
+      offset = tf.identity(y[:, :params_len], name='offset')
+      offset = tf.reshape(offset, params_shape_broadcast)
+      scale = tf.identity(y[:, params_len:], name='scale')
+      scale = tf.reshape(offset, params_shape_broadcast)
 
-    # Add broadcasting dims to offset and scale (e.g. BWC conv data)
-    offset = tf.reshape(offset, [1 for i in range(len(norm_axes)-1)] + [-1])
-    scale = tf.reshape(scale, [1 for i in range(len(norm_axes)-1)] + [-1])
+    # Calculate the moments (instance activations).
+    mean, var = tf.nn.moments(inputs, moments_axes, keep_dims=True)
 
+    # Compute instance normalization
     result = tf.nn.batch_normalization(inputs, mean, var, offset, scale, 1e-5)
     return result
-
 
 
 def nn_upsample(inputs, stride=4):
@@ -70,9 +81,23 @@ def avg_downsample(inputs, stride=4):
 def lrelu(inputs, alpha=0.2):
   with tf.variable_scope('lrelu'):
     return tf.maximum(alpha * inputs, inputs)
+
+
+def map_latent(z_in):
+  '''Tranform z -> w, where w is the disentangled latent space'''
+  with tf.variable_scope('z_to_w'):
+    w = tf.layers.dense(z_in, z_in.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    w = tf.layers.dense(w, w.shape[1], activation=lrelu)
+    return w
   
 
-def to_audio(in_code, pre_activation=lrelu, post_activation=tf.tanh, normalization=lambda x: x, use_pixel_norm=True):
+def to_audio(in_code, pre_activation=lrelu, post_activation=tf.tanh, normalization=lambda x: x, use_pixel_norm=False):
   '''
   Converts 2d feature map into an audio clip.
   Usage Note: :param in_code: is expected to be non-activated (linear).
@@ -112,7 +137,7 @@ def add_conditioning(in_code, cond_embed):
     return h_c_code
 
 
-def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, normalization=lambda x: x, use_pixel_norm=True, upsample_method='zeros'):
+def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, activation=lrelu, normalization=lambda x: x, use_pixel_norm=False, upsample_method='zeros'):
   '''
   Up Block
   '''
@@ -214,7 +239,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
     return code, audio_lod
 
 
-def residual_block(inputs, filters, kernel_size=9, stride=1, padding='same', activation=lrelu, normalization=lambda x: x, use_pixel_norm=True):
+def residual_block(inputs, filters, kernel_size=9, stride=1, padding='same', activation=lrelu, normalization=lambda x: x, use_pixel_norm=False):
   with tf.variable_scope('rb'):
     shortcut = inputs
     if shortcut.get_shape().as_list()[2] != filters:
@@ -331,16 +356,22 @@ def WaveGANGenerator(
     train=False,
     context_embedding=None,
     embedding_dim=128,
-    use_pixel_norm=True):
+    use_pixel_norm=False,
+    use_ada_inst_norm=False):
   batch_size = tf.shape(z)[0]
 
-  if use_batchnorm:
-    batchnorm = lambda x: tf.layers.batch_normalization(x, training=train)
-    _batchnorm = lambda x: tf.contrib.layers.batch_norm(x, is_training=train, updates_collections=None) # Hacky fix for weird tensorflow bug that only happens when using batchnorm in an up_block
-  else:
-    _batchnorm = batchnorm = lambda x: x
-
   h_code = z
+  if use_ada_inst_norm:
+    h_code = map_latent(z) # Disentagle latent vector
+    normalization = partial(adaptive_inst_norm, h_code)
+    _normalization = normalization
+  elif use_batchnorm:
+    normalization = lambda x: tf.layers.batch_normalization(x, training=train)
+    _normalization = lambda x: tf.contrib.layers.batch_norm(x, is_training=train, updates_collections=None) # Hacky fix for weird tensorflow bug that only happens when using batchnorm in an up_block
+  else:
+    normalization = lambda x: x
+    _normalization = normalization
+
   if use_pixel_norm:
     h_code = pixel_norm(h_code, axis=1)
 
@@ -348,7 +379,7 @@ def WaveGANGenerator(
     # Reduce or expand context embedding to be size [embedding_dim]
     c_code = compress_embedding(context_embedding, embedding_dim)
     kl_loss = 0
-    h_c_code = lrelu(batchnorm(c_code)) # Apply normalization and activation to c_code before passing it to fully connected layer
+    h_c_code = lrelu(normalization(c_code)) # Apply normalization and activation to c_code before passing it to fully connected layer
     if use_pixel_norm:
       h_c_code = pixel_norm(h_c_code, axis=1)
     h_code = tf.concat([h_code, h_c_code], 1)
@@ -360,21 +391,25 @@ def WaveGANGenerator(
   # FC and reshape for convolution
   # [512] -> [16, 512]
   with tf.variable_scope('z'):
-    h_code = tf.layers.dense(h_code, 16 * dim * 32)
-    h_code = tf.reshape(h_code, [batch_size, 16, dim * 32])
+    if use_ada_inst_norm and context_embedding is None:
+      h_code = tf.get_variable('const_in', shape=[1, 16, dim * 32])
+      h_code = tf.tile(h_code, [batch_size, 1, 1])
+    else:
+      h_code = tf.layers.dense(h_code, 16 * dim * 32)
+      h_code = tf.reshape(h_code, [batch_size, 16, dim * 32])
 
   # First residual block
   # [16, 512] -> [16, 512]
   with tf.variable_scope('l0'):
-    h_code = residual_block(h_code, filters=dim * 32, kernel_size=kernel_len, normalization=batchnorm, use_pixel_norm=use_pixel_norm)
-    audio_lod = to_audio(h_code, normalization=batchnorm, use_pixel_norm=use_pixel_norm)
+    h_code = residual_block(h_code, filters=dim * 32, kernel_size=kernel_len, normalization=normalization, use_pixel_norm=use_pixel_norm)
+    audio_lod = to_audio(h_code, normalization=normalization, use_pixel_norm=use_pixel_norm)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='G_audio_lod_0')
 
   # Layer 1
   # [16, 512] -> [64, 256]
   with tf.variable_scope('up1'):
     on_amount = lod-0
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=_normalization, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='G_audio_lod_1')
 
@@ -382,7 +417,7 @@ def WaveGANGenerator(
   # [64, 256] -> [256, 128]
   with tf.variable_scope('up2'):
     on_amount = lod-1
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=_normalization, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='G_audio_lod_2')
 
@@ -390,7 +425,7 @@ def WaveGANGenerator(
   # [256, 128] -> [1024, 64]
   with tf.variable_scope('up3'):
     on_amount = lod-2
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=_normalization, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='G_audio_lod_3')
 
@@ -398,7 +433,7 @@ def WaveGANGenerator(
   # [1024, 64] -> [4096, 32]
   with tf.variable_scope('up4'):
     on_amount = lod-3
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=_normalization, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', nn_upsample(audio_lod), 16000, max_outputs=10, family='G_audio_lod_4')
 
@@ -407,11 +442,11 @@ def WaveGANGenerator(
   # [16384, 16] -> [16384, 1] (audio_lod)
   with tf.variable_scope('up5'):
     on_amount = lod-4
-    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=_batchnorm, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
+    h_code, audio_lod = up_block(h_code, audio_lod=audio_lod, filters=dim, kernel_size=kernel_len, normalization=_normalization, on_amount=on_amount, upsample_method=upsample, use_pixel_norm=use_pixel_norm)
     tf.summary.scalar('on_amount', on_amount)
     tf.summary.audio('G_audio', audio_lod, 16000, max_outputs=10, family='G_audio_lod_5')
 
-  # Automatically update batchnorm moving averages every time G is used during training
+  # Automatically update normalization moving averages every time G is used during training
   if train and use_batchnorm:
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     # if len(update_ops) != 10:
@@ -524,7 +559,7 @@ def WaveGANDiscriminator(
     embedding_dim=128,
     use_extra_uncond_output=False):
   if use_layernorm:
-    normalization = layernorm
+    normalization = tf.contrib.layers.layer_norm
   elif use_batchnorm:
     normalization = lambda x: tf.layers.batch_normalization(x, training=True)
   else:

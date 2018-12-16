@@ -551,7 +551,10 @@ def infer(args):
   flat_pad = tf.placeholder(tf.int32, [], name='flat_pad')
 
   # Conditioning input
-  c = tf.placeholder(tf.float32, [None, 1024], name='c')
+  if args.use_gen_ada_inst_norm:
+    c = None
+  else:
+    c = tf.placeholder(tf.float32, [None, 1024], name='c')
 
   # Execute generator
   with tf.variable_scope('G'):
@@ -861,6 +864,8 @@ if __name__ == '__main__':
       help='If set, use post-processing filter')
   wavegan_args.add_argument('--no_conditioning', action='store_false', dest='use_conditioning',
       help='If set disable conditioning the model on text')
+  wavegan_args.add_argument('--use_gen_ada_inst_norm', action='store_true', dest='use_gen_ada_inst_norm',
+      help='If set enable StyleGAN style adaptive instance normalization based on transformed latent variable')
 
   train_args = parser.add_argument_group('Train')
   train_args.add_argument('--train_batch_size', type=int,
@@ -891,7 +896,8 @@ if __name__ == '__main__':
     wavegan_dim=16,
     wavegan_batchnorm=False,
     use_pixel_norm=False,
-    use_disc_layernrom=False,
+    use_disc_layernorm=False,
+    use_gen_ada_inst_norm=False,
     wavegan_disc_nupdates=5,
     wavegan_loss='wgan-gp',
     wavegan_genr_upsample='zeros',
@@ -925,7 +931,8 @@ if __name__ == '__main__':
       'dim': args.wavegan_dim,
       'use_batchnorm': args.wavegan_batchnorm,
       'use_pixel_norm': args.use_pixel_norm,
-      'upsample': args.wavegan_genr_upsample
+      'upsample': args.wavegan_genr_upsample,
+      'use_ada_inst_norm': args.use_gen_ada_inst_norm
   })
   setattr(args, 'wavegan_d_kwargs', {
       'kernel_len': args.wavegan_kernel_len,
