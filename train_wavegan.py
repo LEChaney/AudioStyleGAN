@@ -447,16 +447,16 @@ def train(fps, args):
 
   def get_lod_at_step(step):
     return np.piecewise(float(step),
-                        [         step < 10000, 10000 <= step < 20000,
-                         20000 <= step < 30000, 30000 <= step < 40000,
-                         40000 <= step < 50000, 50000 <= step < 60000,
-                         60000 <= step < 70000, 70000 <= step < 80000,
-                         80000 <= step < 90000, 90000 <= step < 100000],
-                        [0, lambda x: np_lerp_clip((x - 10000) / 10000, 0, 1),
-                         1, lambda x: np_lerp_clip((x - 30000) / 10000, 1, 2),
-                         2, lambda x: np_lerp_clip((x - 50000) / 10000, 2, 3),
-                         3, lambda x: np_lerp_clip((x - 70000) / 10000, 3, 4),
-                         4, lambda x: np_lerp_clip((x - 90000) / 10000, 4, 5),
+                        [          step < 40000 , 40000  <= step < 80000,
+                         80000  <= step < 120000, 120000 <= step < 160000,
+                         160000 <= step < 200000, 200000 <= step < 240000,
+                         240000 <= step < 280000, 280000 <= step < 320000,
+                         320000 <= step < 360000, 360000 <= step < 400000],
+                        [0, lambda x: np_lerp_clip((x - 40000 ) / 40000, 0, 1),
+                         1, lambda x: np_lerp_clip((x - 120000) / 40000, 1, 2),
+                         2, lambda x: np_lerp_clip((x - 200000) / 40000, 2, 3),
+                         3, lambda x: np_lerp_clip((x - 280000) / 40000, 3, 4),
+                         4, lambda x: np_lerp_clip((x - 360000) / 40000, 4, 5),
                          5])
 
   def my_filter_callable(datum, tensor):
