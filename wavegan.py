@@ -57,7 +57,7 @@ def nn_upsample(inputs, stride=4):
   with tf.variable_scope('nn_upsample'):
     w = tf.shape(inputs)[1]
     output = tf.expand_dims(inputs, axis=1)
-    output = tf.image.resize_bilinear(output, [1, w * stride])
+    output = tf.image.resize_bilinear(output, [1, w * stride], align_corners=True)
     output = output[:, 0]
     return output
 
