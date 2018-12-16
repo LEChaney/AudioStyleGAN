@@ -1,7 +1,7 @@
 python train_wavegan.py train .\train ^
 --data_dir .\data\Final_Datasets\All ^
 --data_first_window ^
---use_extra_uncond_loss ^
+--no_conditioning ^
 --wavegan_kernel_len 9 ^
 --wavegan_genr_upsample nn ^
 --train_batch_size 50 ^

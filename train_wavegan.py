@@ -174,10 +174,11 @@ def train(fps, args):
       logits=D_G_z[0],
       labels=fake
     ))
-    D_loss_wrong = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-      logits=D_w[0],
-      labels=fake
-    )) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+    if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+      D_loss_wrong = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+        logits=D_w[0],
+        labels=fake
+      ))
     D_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=D_x[0],
       labels=real
@@ -201,8 +202,10 @@ def train(fps, args):
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
              + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
       D_loss /= 2
-    else:
+    elif args.use_conditioning:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
+    else:
+      D_loss = D_loss_real + D_loss_fake
 
     # Warmup Conditional Loss
     # D_warmup_loss = D_loss_real + D_loss_wrong
@@ -218,7 +221,8 @@ def train(fps, args):
 
     # Conditional D Loss
     D_loss_real = tf.reduce_mean((D_x[0] - 1.) ** 2)
-    D_loss_wrong = tf.reduce_mean(D_w[0] ** 2) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+    if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+      D_loss_wrong = tf.reduce_mean(D_w[0] ** 2)
     D_loss_fake = tf.reduce_mean(D_G_z[0] ** 2)
 
     # Unconditional D Loss
@@ -230,8 +234,10 @@ def train(fps, args):
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
              + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
       D_loss /= 2
-    else:
+    elif args.use_conditioning:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
+    else:
+      D_loss = D_loss_real + D_loss_fake
 
     # Warmup Conditional Loss
     # D_warmup_loss = D_loss_real + D_loss_wrong
@@ -247,7 +253,8 @@ def train(fps, args):
 
     # Conditional D Loss
     D_loss_real = -tf.reduce_mean(D_x[0])
-    D_loss_wrong = tf.reduce_mean(D_w[0]) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+    if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+      D_loss_wrong = tf.reduce_mean(D_w[0])
     D_loss_fake = tf.reduce_mean(D_G_z[0]) 
 
     # Unconditional D Loss
@@ -259,8 +266,10 @@ def train(fps, args):
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
              + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
       D_loss /= 2
-    else:
+    elif args.use_conditioning:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
+    else:
+      D_loss = D_loss_real + D_loss_fake
 
     # Warmup Conditional Loss
     # D_warmup_loss = D_loss_real + D_loss_wrong
@@ -288,7 +297,8 @@ def train(fps, args):
 
     # Conditional D Loss
     D_loss_real = -tf.reduce_mean(D_x[0])
-    D_loss_wrong = tf.reduce_mean(D_w[0]) if args.use_conditioning else 0 # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+    if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
+      D_loss_wrong = tf.reduce_mean(D_w[0])
     D_loss_fake = tf.reduce_mean(D_G_z[0]) 
 
     # Unconditional D Loss
@@ -300,8 +310,10 @@ def train(fps, args):
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
              + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond
       D_loss /= 2
-    else:
+    elif args.use_conditioning:
       D_loss = D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)
+    else:
+      D_loss = D_loss_real + D_loss_fake
 
     # Conditional Gradient Penalty
     alpha = tf.random_uniform(shape=[args.train_batch_size, 1, 1], minval=0., maxval=1.)
@@ -341,28 +353,26 @@ def train(fps, args):
   if (args.wavegan_loss == 'wgan-gp'):
     tf.summary.scalar('Gradient Penalty', LAMBDA * gradient_penalty)
   if (args.wavegan_loss == 'wgan' or args.wavegan_loss == 'wgan-gp'):
-    if args.use_extra_uncond_loss:
+    if args.use_conditioning and args.use_extra_uncond_loss:
       tf.summary.scalar('Critic Score - Real Data - Condition Match', -D_loss_real)
       tf.summary.scalar('Critic Score - Fake Data - Condition Match', D_loss_fake)
       tf.summary.scalar('Critic Score - Wrong Data - Condition Match', D_loss_wrong)
       tf.summary.scalar('Critic Score - Real Data', -D_loss_real_uncond)
       tf.summary.scalar('Critic Score - Wrong Data', -D_loss_wrong_uncond)
       tf.summary.scalar('Critic Score - Fake Data', D_loss_fake_uncond)
-      tf.summary.scalar('Wasserstein Distance - No Regularization Term',
-                        -((D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake) \
-                         + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond) / 2))
       tf.summary.scalar('Wasserstein Distance - Real-Wrong Only', -(D_loss_real + D_loss_wrong))
       tf.summary.scalar('Wasserstein Distance - Real-Fake Only',
                         -((D_loss_real + D_loss_fake \
                          + D_loss_real_uncond + D_loss_fake_uncond) / 2))
     else:
       tf.summary.scalar('Critic Score - Real Data', -D_loss_real)
-      tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
+      if args.use_conditioning:
+        tf.summary.scalar('Critic Score - Wrong Data', D_loss_wrong)
       tf.summary.scalar('Critic Score - Fake Data', D_loss_fake)
-      tf.summary.scalar('Wasserstein Distance - No Regularization Term', -(D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake)))
+    tf.summary.scalar('Wasserstein Distance - No Regularization Term', -(D_loss - LAMBDA * gradient_penalty))
     tf.summary.scalar('Wasserstein Distance - With Regularization Term', -D_loss)
   else:
-    if args.use_extra_uncond_loss:
+    if args.use_conditioning and args.use_extra_uncond_loss:
       tf.summary.scalar('D_acc_uncond', 0.5 * ((0.5 * (tf.reduce_mean(tf.sigmoid(D_x[1])) + tf.reduce_mean(tf.sigmoid(D_w[1])))) \
                                              + tf.reduce_mean(1 - tf.sigmoid(D_G_z[1]))))
       tf.summary.scalar('D_acc', 0.5 * (tf.reduce_mean(tf.sigmoid(D_x[0])) \
