@@ -21,6 +21,9 @@ def adaptive_inst_norm(w, inputs):
     if len(inputs_shape) <= 2:
       return inputs
 
+    # TODO: This should probably be placed before each AdaIN and be individually enablable / disablable.
+    inputs = inject_noise(inputs)
+
     # Work out shapes and axes for later calculations
     reduction_axis = inputs_rank - 1
     params_shape_broadcast = list(
@@ -95,6 +98,16 @@ def map_latent(z_in):
     w = tf.layers.dense(w, w.shape[1], activation=lrelu)
     w = tf.layers.dense(w, w.shape[1], activation=lrelu)
     return w
+
+
+def inject_noise(inputs):
+  with tf.variable_scope('noise'):
+    inputs_rank = inputs.shape.ndims
+    params_shape_broadcast = list([1 for _ in range(1, inputs_rank-1)] + [inputs.shape[-1].value])
+    noise_bias = tf.get_variable('noise_b', shape=params_shape_broadcast)
+    noise_scale = tf.get_variable('noise_s', shape=params_shape_broadcast)
+    noise = noise_scale * tf.random_normal(tf.shape(inputs)) + noise_bias
+    return inputs + noise
   
 
 def to_audio(in_code, pre_activation=lrelu, post_activation=tf.tanh, normalization=lambda x: x, use_pixel_norm=False):
