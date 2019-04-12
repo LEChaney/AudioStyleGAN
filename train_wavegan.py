@@ -447,10 +447,10 @@ def train(fps, args):
 
   def get_lod_at_step(step):
     return np.piecewise(float(step),
-                        [          step < 50000 ,  50000 <= step < 100000,
-                         100000 <= step < 150000, 150000 <= step < 200000],
-                        [3, lambda x: np_lerp_clip((x - 50000 ) / 50000, 3, 4),
-                         4, lambda x: np_lerp_clip((x - 150000) / 50000, 4, 5),
+                        [          step < 5000 , 5000 <= step < 10000,
+                         10000 <= step < 15000, 15000 <= step < 20000],
+                        [3, lambda x: np_lerp_clip((x - 5000 ) / 5000, 3, 4),
+                         4, lambda x: np_lerp_clip((x - 15000) / 5000, 4, 5),
                          5])
 
   def my_filter_callable(datum, tensor):
