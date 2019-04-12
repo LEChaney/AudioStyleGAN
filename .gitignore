@@ -16,3 +16,4 @@ embed_visualization/
 *.meta
 *.pbtxt
 *.pkl
+*.wav_cond.txt
