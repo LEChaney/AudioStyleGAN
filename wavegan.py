@@ -124,7 +124,7 @@ def to_audio(in_code, pre_activation=lrelu, post_activation=tf.tanh, normalizati
     if use_pixel_norm:
       output = pixel_norm(output)
     output = tf.layers.conv1d(output, filters=1, kernel_size=1, strides=1, padding='same')
-    output = post_activation(output)
+    # output = post_activation(output)
     return output
 
 def from_audio(inputs, out_feature_maps):
@@ -489,10 +489,11 @@ def apply_inst_noise(audio_lod, on_amount, lod_progress, max_stddev=0.1):
   '''
   :param on_amount: The on amount of the downsample block that this audio is INPUT for.
   '''
-  adding_noise = tf.logical_and(0 < on_amount, on_amount < 1)
-  decaying_noise = tf.logical_and(1 <= on_amount, on_amount < 1.000005)  # Appoximatly 1
-  inst_noise_stddev = tf.where(adding_noise, lerp_clip(0, max_stddev, on_amount),
-                      tf.where(decaying_noise, lerp_clip(max_stddev, 0, tf.floormod(lod_progress, 1)), 0)) # Could be dangerous if wraps on lod change
+  decaying_noise_lod_tran = tf.logical_and(0 < on_amount, on_amount < 1) # Transitioning LOD, decaying by half
+  decaying_noise_lod_flat = tf.logical_and(1 <= on_amount, on_amount < 1.000005)  # Stationary LOD, decaying remaining half
+  inst_noise_stddev = tf.where(decaying_noise_lod_tran, lerp_clip(max_stddev, max_stddev / 2, on_amount),
+                      tf.where(decaying_noise_lod_flat, lerp_clip(max_stddev / 2, 0, tf.floormod(lod_progress, 1)), # Could be dangerous if wraps on lod change
+                      0))
   if 'D_x/' in tf.get_default_graph().get_name_scope():
     tf.summary.scalar('inst_noise_stddev', inst_noise_stddev)
     # tf.summary.scalar('adding_noise', tf.cast(adding_noise, dtype=tf.float32))

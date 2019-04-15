@@ -479,6 +479,7 @@ def train(fps, args):
 
     cur_lod = 0
     cur_lod_progress = 0
+    max_lod = 5
     while True:
       # Calculate Maximum LOD to train
       step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
@@ -486,7 +487,7 @@ def train(fps, args):
       prev_lod, _ = get_lod_at_step(step - 1)
 
       # Reset optimizer internal state when new layers are introduced
-      if np.floor(cur_lod) != np.floor(prev_lod) or np.ceil(cur_lod) != np.ceil(prev_lod):
+      if cur_lod < max_lod + 0.000005 and (np.floor(cur_lod) != np.floor(prev_lod) or np.ceil(cur_lod) != np.ceil(prev_lod)):
         print("Resetting optimizers' internal states at step {}".format(step))
         sess.run([reset_G_opt_op, reset_D_opt_op], feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
 
