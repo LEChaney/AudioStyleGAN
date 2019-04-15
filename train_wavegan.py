@@ -24,7 +24,7 @@ from functools import reduce
 """
 _FS = 16000
 _WINDOW_LEN = 16384
-_D_Z = 256
+_D_Z = 128
 
 
 """
@@ -50,7 +50,8 @@ def train(fps, args):
     args.wavegan_g_kwargs['context_embedding'] = cond_text_embed
     args.wavegan_d_kwargs['context_embedding'] = args.wavegan_g_kwargs['context_embedding']
 
-  lod = tf.placeholder(tf.float32, shape=[])
+  lod = tf.placeholder(tf.float32, shape=[]) # The current LOD level
+  lod_progress = tf.placeholder(tf.float32, shape=[]) # Monotonically increasing LOD progress meter scaled by steps per lod
   
   with tf.variable_scope('G'):
     # Make generator
@@ -126,7 +127,7 @@ def train(fps, args):
 
   # Make real discriminator
   with tf.name_scope('D_x'), tf.variable_scope('D'):
-    D_x = WaveGANDiscriminator(x, lod, **args.wavegan_d_kwargs)
+    D_x = WaveGANDiscriminator(x, lod, lod_progress, **args.wavegan_d_kwargs)
   D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='D')
 
   # Print D summary
@@ -143,10 +144,10 @@ def train(fps, args):
 
   # Make fake / wrong discriminator
   with tf.name_scope('D_G_z'), tf.variable_scope('D', reuse=True):
-    D_G_z = WaveGANDiscriminator(G_z, lod, **args.wavegan_d_kwargs)
+    D_G_z = WaveGANDiscriminator(G_z, lod, lod_progress, **args.wavegan_d_kwargs)
   if args.use_conditioning: # Distinguishing between real / wrong inputs only makes sense for conditioned discriminators
     with tf.name_scope('D_w'), tf.variable_scope('D', reuse=True):
-      D_w = WaveGANDiscriminator(wrong_audio, lod, **args.wavegan_d_kwargs)
+      D_w = WaveGANDiscriminator(wrong_audio, lod, lod_progress, **args.wavegan_d_kwargs)
 
   # Create loss
   D_clip_weights = None
@@ -325,7 +326,7 @@ def train(fps, args):
     differences = fake - real
     interpolates = real + (alpha * differences)
     with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-      D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[0] # Only want conditional output
+      D_interp = WaveGANDiscriminator(interpolates, lod, lod_progress, **args.wavegan_d_kwargs)[0] # Only want conditional output
     gradients = tf.gradients(D_interp, [interpolates])[0]
     slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
     gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2.)
@@ -338,7 +339,7 @@ def train(fps, args):
       differences = fake - real
       interpolates = real + (alpha * differences)
       with tf.name_scope('D_interp'), tf.variable_scope('D', reuse=True):
-        D_interp = WaveGANDiscriminator(interpolates, lod, **args.wavegan_d_kwargs)[1] # Only want unconditional output
+        D_interp = WaveGANDiscriminator(interpolates, lod, lod_progress, **args.wavegan_d_kwargs)[1] # Only want unconditional output
       gradients = tf.gradients(D_interp, [interpolates])[0]
       slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2]))
       gradient_penalty += tf.reduce_mean((slopes - 1.) ** 2.)
@@ -390,12 +391,10 @@ def train(fps, args):
                         + 0.5 * (D_loss_real_uncond + D_loss_wrong_uncond) + D_loss_fake_uncond) / 2)
     else:
       tf.summary.scalar('D_acc', 0.5 * (tf.reduce_mean(tf.sigmoid(D_x[0])) \
-                                      + 0.5 * (tf.reduce_mean(1 - tf.sigmoid(D_w[0])) + tf.reduce_mean(1 - tf.sigmoid(D_G_z[0])))))
+                                      + tf.reduce_mean(1 - tf.sigmoid(D_G_z[0]))))
       tf.summary.scalar('D_loss_real', D_loss_real)
-      tf.summary.scalar('D_loss_wrong', D_loss_wrong)
       tf.summary.scalar('D_loss_fake', D_loss_fake)
-      tf.summary.scalar('D_loss_unregularized', D_loss_real + 0.5 * (D_loss_wrong + D_loss_fake))
-    tf.summary.scalar('D_loss', D_loss)
+  tf.summary.scalar('D_loss', D_loss)
 
   # Create (recommended) optimizer
   if args.wavegan_loss == 'dcgan':
@@ -421,7 +420,7 @@ def train(fps, args):
         beta1=0.0,
         beta2=0.9)
     D_opt = tf.train.AdamOptimizer(
-        learning_rate=1e-4,
+        learning_rate=3e-4,
         beta1=0.0,
         beta2=0.9)
   else:
@@ -446,12 +445,15 @@ def train(fps, args):
   
 
   def get_lod_at_step(step):
-    return np.piecewise(float(step),
-                        [          step < 5000 , 5000 <= step < 10000,
-                         10000 <= step < 15000, 15000 <= step < 20000],
-                        [3, lambda x: np_lerp_clip((x - 5000 ) / 5000, 3, 4),
-                         4, lambda x: np_lerp_clip((x - 15000) / 5000, 4, 5),
-                         5])
+    lod_progress = step / 5000
+    return (np.piecewise(float(lod_progress),
+                         [     lod_progress < 1, 1 <= lod_progress < 2,
+                          2 <= lod_progress < 3, 3 <= lod_progress < 4],
+                         [3, lambda x: np_lerp_clip((x - 1), 3, 4),
+                          4, lambda x: np_lerp_clip((x - 3), 4, 5), 
+                          5]),
+            lod_progress)
+
 
   def my_filter_callable(datum, tensor):
     if (not isinstance(tensor, debug_data.InconvertibleTensorProto)) and (tensor.dtype == np.float32 or tensor.dtype == np.float64):
@@ -474,34 +476,36 @@ def train(fps, args):
     summary_writer = SummaryWriterCache.get(args.train_dir)
 
     cur_lod = 0
+    cur_lod_progress = 0
     while True:
       # Calculate Maximum LOD to train
-      step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod})
-      cur_lod = get_lod_at_step(step)
-      prev_lod = get_lod_at_step(step - 1)
+      step = sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
+      cur_lod, cur_lod_progress = get_lod_at_step(step)
+      prev_lod, _ = get_lod_at_step(step - 1)
 
       # Reset optimizer internal state when new layers are introduced
       if np.floor(cur_lod) != np.floor(prev_lod) or np.ceil(cur_lod) != np.ceil(prev_lod):
         print("Resetting optimizers' internal states at step {}".format(step))
-        sess.run([reset_G_opt_op, reset_D_opt_op], feed_dict={lod: cur_lod})
+        sess.run([reset_G_opt_op, reset_D_opt_op], feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
 
       # Output current LOD and 'steps at currrent LOD' to tensorboard
-      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod}))
+      step = float(sess.run(tf.train.get_or_create_global_step(), feed_dict={lod: cur_lod, lod_progress: cur_lod_progress}))
       lod_summary = tf.Summary(value=[
         tf.Summary.Value(tag="current_lod", simple_value=float(cur_lod)),
+        tf.Summary.Value(tag="current_lod_progress", simple_value=(cur_lod_progress))
       ])
       summary_writer.add_summary(lod_summary, step)
 
       # Train discriminator
       for i in xrange(args.wavegan_disc_nupdates):
-        sess.run(D_train_op, feed_dict={lod: cur_lod})
+        sess.run(D_train_op, feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
 
         # Enforce Lipschitz constraint for WGAN
         if D_clip_weights is not None:
-          sess.run(D_clip_weights, feed_dict={lod: cur_lod})
+          sess.run(D_clip_weights, feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
 
       # Train generator
-      sess.run(G_train_op, feed_dict={lod: cur_lod})
+      sess.run(G_train_op, feed_dict={lod: cur_lod, lod_progress: cur_lod_progress})
 
 
 """
