@@ -491,7 +491,7 @@ def apply_inst_noise(audio_lod, on_amount, lod_progress, max_stddev=0.1):
   '''
   adding_noise = tf.logical_and(0 < on_amount, on_amount < 1)
   decaying_noise = tf.logical_and(1 <= on_amount, on_amount < 1.000005)  # Appoximatly 1
-  inst_noise_stddev = tf.where(adding_noise, max_stddev,  # Use max noise for LODs that are transitioning in or being skipped since the contribution of the entire audio LOD is already being interpolated
+  inst_noise_stddev = tf.where(adding_noise, lerp_clip(0, max_stddev, on_amount),
                       tf.where(decaying_noise, lerp_clip(max_stddev, 0, tf.floormod(lod_progress, 1)), 0)) # Could be dangerous if wraps on lod change
   if 'D_x/' in tf.get_default_graph().get_name_scope():
     tf.summary.scalar('inst_noise_stddev', inst_noise_stddev)

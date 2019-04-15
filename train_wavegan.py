@@ -448,10 +448,12 @@ def train(fps, args):
     lod_progress = step / 5000
     return (np.piecewise(float(lod_progress),
                          [     lod_progress < 1, 1 <= lod_progress < 2,
-                          2 <= lod_progress < 3, 3 <= lod_progress < 4],
+                          2 <= lod_progress < 3, 3 <= lod_progress < 4,
+                          4 <= lod_progress < 5, 5 <= lod_progress < 6],
                          [3, lambda x: np_lerp_clip((x - 1), 3, 4),
                           4, lambda x: np_lerp_clip((x - 3), 4, 5), 
-                          5]),
+                          5, lambda x: np_lerp_clip((x - 5), 5, 6), # Only used to avoid reapplying un-decayed instance noise
+                          6]),
             lod_progress)
 
 
