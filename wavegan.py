@@ -213,10 +213,11 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
   '''
   with tf.variable_scope('db'):
     audio_lod = avg_downsample(audio_lod, stride)
+    skip_connection_code = from_audio(audio_lod, filters)
 
     def skip():
       with tf.variable_scope('dk'):
-        return from_audio(audio_lod, filters)
+        return skip_connection_code
 
     def transition():
       with tf.variable_scope('tr'):
@@ -242,7 +243,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
         code = shortcut + code
 
         # Blend this LOD block in over time
-        return lerp_clip(shortcut, code, on_amount)
+        return lerp_clip(skip_connection_code, code, on_amount)
       
     code = tf.cond(on_amount <= 0.0, skip, transition)
     code.set_shape([inputs.shape[0], inputs.shape[1] // stride, filters])
