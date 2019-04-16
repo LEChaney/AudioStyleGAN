@@ -170,7 +170,6 @@ def up_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, act
           if shortcut.get_shape().as_list()[2] != filters:
             shortcut = tf.layers.conv1d(shortcut, filters, kernel_size=1, strides=1, padding='same')
 
-        # TODO: Only compute code when fully on (this is when the code will actually be used by the next layer)
         code = inputs
 
         # Convolution layers
@@ -214,11 +213,10 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
   '''
   with tf.variable_scope('db'):
     audio_lod = avg_downsample(audio_lod, stride)
-    skip_connection_code = from_audio(audio_lod, filters)
 
     def skip():
       with tf.variable_scope('dk'):
-        return skip_connection_code
+        return from_audio(audio_lod, filters)
 
     def transition():
       with tf.variable_scope('tr'):
@@ -244,7 +242,7 @@ def down_block(inputs, audio_lod, filters, on_amount, kernel_size=9, stride=4, a
         code = shortcut + code
 
         # Blend this LOD block in over time
-        return lerp_clip(skip_connection_code, code, on_amount)
+        return lerp_clip(shortcut, code, on_amount)
       
     code = tf.cond(on_amount <= 0.0, skip, transition)
     code.set_shape([inputs.shape[0], inputs.shape[1] // stride, filters])
@@ -523,7 +521,8 @@ def encode_audio(x,
     phaseshuffle = lambda x: x
 
   with tf.variable_scope('ae'):
-    audio_lod = apply_inst_noise(x, lod - 4, lod_progress)
+    audio_lod = x
+    # audio_lod = apply_inst_noise(audio_lod, lod - 4, lod_progress)
     if 'D_x/' in tf.get_default_graph().get_name_scope():
       tf.summary.audio('input_audio', audio_lod, 16000, max_outputs=10, family='D_audio_lod_5')
 
@@ -533,7 +532,7 @@ def encode_audio(x,
     with tf.variable_scope('do0'):
       on_amount = lod-4
       h_code, audio_lod = down_block(from_audio(audio_lod, dim), audio_lod=audio_lod, filters=dim * 2, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
+      # audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
       if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(audio_lod), 16000, max_outputs=10, family='D_audio_lod_4')
         tf.summary.scalar('on_amount', on_amount)
@@ -543,7 +542,7 @@ def encode_audio(x,
     with tf.variable_scope('do1'):
       on_amount = lod-3
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 4, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
+      # audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
       if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(audio_lod)), 16000, max_outputs=10, family='D_audio_lod_3')
         tf.summary.scalar('on_amount', on_amount)
@@ -553,7 +552,7 @@ def encode_audio(x,
     with tf.variable_scope('do2'):
       on_amount = lod-2
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 8, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
+      # audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
       if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(audio_lod))), 16000, max_outputs=10, family='D_audio_lod_2')
         tf.summary.scalar('on_amount', on_amount)
@@ -563,7 +562,7 @@ def encode_audio(x,
     with tf.variable_scope('do3'):
       on_amount = lod-1
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 16, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
+      # audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
       if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod)))), 16000, max_outputs=10, family='D_audio_lod_1')
         tf.summary.scalar('on_amount', on_amount)
@@ -573,7 +572,7 @@ def encode_audio(x,
     with tf.variable_scope('do4'):
       on_amount = lod-0
       h_code, audio_lod = down_block(h_code, audio_lod=audio_lod, filters=dim * 32, kernel_size=kernel_len, normalization=batchnorm, on_amount=on_amount)
-      audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
+      # audio_lod = apply_inst_noise(audio_lod, on_amount + 1, lod_progress)
       if 'D_x/' in tf.get_default_graph().get_name_scope():
         tf.summary.audio('audio_downsample', nn_upsample(nn_upsample(nn_upsample(nn_upsample(nn_upsample(audio_lod))))), 16000, max_outputs=10, family='D_audio_lod_0')
         tf.summary.scalar('on_amount', on_amount)
@@ -663,8 +662,8 @@ def WaveGANDiscriminator(
         uncond_out = normalization(uncond_out)
         uncond_out = lrelu(uncond_out)
         uncond_out = tf.layers.dense(uncond_out, 1)
-      return [output, uncond_out]
+      return [output, uncond_out, x_code]
     else:
-      return [output]
+      return [output, x_code]
   
   # Don't need to aggregate batchnorm update ops like we do for the generator because we only use the discriminator for training
