@@ -351,19 +351,19 @@ def train(fps, args):
     raise NotImplementedError()
 
   # Diversity Regularization
-  if args.use_conditioning and args.use_extra_uncond_loss:
-    fake_audio_embed = D_G_z[2]
-  else:
-    fake_audio_embed = D_G_z[1]
-  audio_embed_diff = fake_audio_embed[:args.train_batch_size // 2] - fake_audio_embed[args.train_batch_size // 2:]
-  z_diff = z[:args.train_batch_size // 2] - z[args.train_batch_size // 2:]
-  audio_embed_diff_mag = tf.sqrt(tf.reduce_sum(tf.square(audio_embed_diff), reduction_indices=[1, 2]))
-  z_diff_mag = tf.sqrt(tf.reduce_sum(tf.square(z_diff), reduction_indices=[1]))
-  diversity_up_bound = 40
-  diversity_score = tf.reduce_mean(tf.minimum(audio_embed_diff_mag / z_diff_mag, diversity_up_bound))
-  DIVERSITY_SCALE = 0.2
-  G_loss -= DIVERSITY_SCALE * diversity_score
-  tf.summary.scalar('diversity_score', diversity_score)
+  # if args.use_conditioning and args.use_extra_uncond_loss:
+  #   fake_audio_embed = D_G_z[2]
+  # else:
+  #   fake_audio_embed = D_G_z[1]
+  # audio_embed_diff = fake_audio_embed[:args.train_batch_size // 2] - fake_audio_embed[args.train_batch_size // 2:]
+  # z_diff = z[:args.train_batch_size // 2] - z[args.train_batch_size // 2:]
+  # audio_embed_diff_mag = tf.sqrt(tf.reduce_sum(tf.square(audio_embed_diff), reduction_indices=[1, 2]))
+  # z_diff_mag = tf.sqrt(tf.reduce_sum(tf.square(z_diff), reduction_indices=[1]))
+  # diversity_up_bound = 40
+  # diversity_score = tf.reduce_mean(tf.minimum(audio_embed_diff_mag / z_diff_mag, diversity_up_bound))
+  # DIVERSITY_SCALE = 0.2
+  # G_loss -= DIVERSITY_SCALE * diversity_score
+  # tf.summary.scalar('diversity_score', diversity_score)
 
   tf.summary.scalar('G_loss', G_loss)
   if (args.wavegan_loss == 'wgan-gp'):
